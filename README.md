@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Language Coach MVP (Self-Hosted v1)
 
-## Getting Started
+An AI language coach that runs 30–45 minute speaking-first sessions, tracks errors, and shows measurable progress within 30 days. Built as a language-agnostic platform with Language Packs for German, French, and Spanish.
 
-First, run the development server:
+## Status
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Phase 0: Project setup in progress.
+
+## Tech Stack
+
+- Next.js (App Router)
+- React + TypeScript
+- Tailwind CSS
+- SQLite (planned)
+
+## Getting Started (Dev)
+
+1) Install dependencies
+
+```
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2) Run the dev server
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open http://localhost:3000 to view the app.
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+/src        Next.js app
+/packages   Shared libs (planned)
+/docs       Documentation
+/docker     Docker assets
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment Variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Create a .env file in the project root. API keys and provider config will be documented as Phase 0 progresses.
+Copy the starter file:
 
-## Deploy on Vercel
+```
+cp .env.example .env
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Key entries:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- LLM_PROVIDER=openai | openrouter | gemini | anthropic | ollama | lmstudio
+- STT_PROVIDER=openai | openrouter | gemini | anthropic | ollama | lmstudio
+- TTS_PROVIDER=openai | openrouter | gemini | anthropic | ollama | lmstudio
+- OPENAI_API_KEY=
+- OPENROUTER_API_KEY=
+- ANTHROPIC_API_KEY=
+- GEMINI_API_KEY=
+- OLLAMA_BASE_URL=http://localhost:11434
+- LMSTUDIO_BASE_URL=http://localhost:1234
+
+## Docker
+
+```
+docker-compose up --build
+```
+
+## License
+
+MIT
