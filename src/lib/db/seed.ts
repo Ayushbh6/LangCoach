@@ -3,15 +3,14 @@
  * Run with: npx tsx src/lib/db/seed.ts
  */
 
-import { db } from "./index";
-import { users, plans, sessions, errorJournalEntries, vocabEntries, checkpoints } from "./schema";
+import { db, schema } from "./index";
 
 async function seed() {
   console.log("🌱 Seeding database...");
 
   // Create a demo user
   const [demoUser] = await db
-    .insert(users)
+    .insert(schema.users)
     .values({
       displayName: "Demo User",
       targetLanguage: "de",
@@ -36,7 +35,7 @@ async function seed() {
   endDate.setDate(endDate.getDate() + 30);
 
   const [demoPlan] = await db
-    .insert(plans)
+    .insert(schema.plans)
     .values({
       userId: demoUser.id,
       language: "de",
@@ -58,7 +57,7 @@ async function seed() {
 
   // Create a demo session
   const [demoSession] = await db
-    .insert(sessions)
+    .insert(schema.sessions)
     .values({
       userId: demoUser.id,
       planId: demoPlan.id,
@@ -86,7 +85,7 @@ async function seed() {
   console.log(`✅ Created session: ${demoSession.id}`);
 
   // Create demo error journal entries
-  await db.insert(errorJournalEntries).values([
+  await db.insert(schema.errorJournalEntries).values([
     {
       userId: demoUser.id,
       sessionId: demoSession.id,
@@ -128,7 +127,7 @@ async function seed() {
   console.log("✅ Created error journal entries");
 
   // Create demo vocab entries
-  await db.insert(vocabEntries).values([
+  await db.insert(schema.vocabEntries).values([
     {
       userId: demoUser.id,
       sessionId: demoSession.id,
@@ -162,7 +161,7 @@ async function seed() {
   console.log("✅ Created vocab entries");
 
   // Create demo baseline checkpoint
-  await db.insert(checkpoints).values({
+  await db.insert(schema.checkpoints).values({
     userId: demoUser.id,
     planId: demoPlan.id,
     sessionId: demoSession.id,
