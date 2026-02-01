@@ -2,9 +2,9 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const navItems = [
-  { href: "/", label: "Dashboard" },
+  { href: "/home", label: "Home" },
   { href: "/onboarding", label: "Onboarding" },
-  { href: "/session", label: "Session" },
+  { href: "/chat/new", label: "Session" },
   { href: "/review", label: "Micro-Review" },
   { href: "/settings", label: "Settings" },
 ];
