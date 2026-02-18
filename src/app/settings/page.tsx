@@ -128,34 +128,6 @@ export default function SettingsPage() {
             </dl>
           </div>
         </section>
-
-        <section className="rounded-xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-lg font-semibold">Environment variables</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Add the following keys to your .env file. The health check uses these
-            values on startup.
-          </p>
-          <div className="mt-4 grid gap-3 text-sm text-muted-foreground">
-            <div className="flex flex-col gap-1">
-              <span className="font-medium text-foreground">Core selection</span>
-              <span>LLM_PROVIDER=openai | openrouter | gemini | anthropic | ollama | lmstudio</span>
-              <span>STT_PROVIDER=openai | openrouter | gemini | anthropic | ollama | lmstudio</span>
-              <span>TTS_PROVIDER=openai | openrouter | gemini | anthropic | ollama | lmstudio</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="font-medium text-foreground">API keys</span>
-              <span>OPENAI_API_KEY=</span>
-              <span>OPENROUTER_API_KEY=</span>
-              <span>ANTHROPIC_API_KEY=</span>
-              <span>GEMINI_API_KEY=</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="font-medium text-foreground">Local URLs</span>
-              <span>OLLAMA_BASE_URL=http://localhost:11434</span>
-              <span>LMSTUDIO_BASE_URL=http://localhost:1234</span>
-            </div>
-          </div>
-        </section>
       </div>
     </AppShell>
   );

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { onboardingSteps } from "./steps";
 
 type TimeCommitment = {
   sessionLength: number;
@@ -82,3 +83,36 @@ export const useOnboardingStore = create<OnboardingState>()(
     }
   )
 );
+
+export const isStepValid = (slug: string, state: OnboardingState): boolean => {
+  switch (slug) {
+    case "language":
+      return state.language !== null;
+    case "level":
+      return state.level !== null;
+    case "voice-sample":
+      return state.voiceSampleRecorded;
+    case "assessment":
+      return state.assessmentChoice !== null;
+    case "time":
+      return (
+        state.timeCommitment.daysPerWeek > 0 &&
+        state.timeCommitment.sessionLength > 0
+      );
+    case "goals":
+      return state.goals.domain !== null && state.goals.timeline !== null;
+    case "plan":
+      return state.planIntensity !== null;
+    case "complete":
+      return onboardingSteps
+        .filter((s) => s.slug !== "complete")
+        .every((s) => isStepValid(s.slug, state));
+    default:
+      return false;
+  }
+};
+
+export const areAllStepsValid = (state: OnboardingState): boolean => {
+  const stepsToCheck = onboardingSteps.filter((s) => s.slug !== "complete");
+  return stepsToCheck.every((step) => isStepValid(step.slug, state));
+};
