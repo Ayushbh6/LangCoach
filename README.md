@@ -1,21 +1,29 @@
 # German Me
 
-Private Sites app for learning German with 500 distinct everyday vocabulary cards and 40 case cards. Built in `Me/German` with React/Vinext and a Cloudflare D1 database.
+Owner-private Goethe A2–B1 study app in `Me/German`, built with React/Vinext and Cloudflare D1.
 
-- Flip German ↔ English. Nouns include gender and plural; verbs include helpful forms.
-- Due cards first, then up to 20 new cards per session. Add 20 more at session end.
-- Again: 1 minute. New Hard: 6 minutes. New Good: 1 day, then 6 days. New Easy: 4 days. Successful reviews lengthen intervals using a small SM-2-inspired scheduler, not Anki FSRS.
-- Translation directions have independent schedules. Cases use a separate deck.
-- Progress is keyed by the authenticated ChatGPT user, stored in D1, and survives sessions/devices. Ratings use idempotency keys and optimistic concurrency protection.
-- The daily goal and streak use Europe/Vienna. Browser speech uses available German system voices.
-- Private access is enforced by Sites; protected page/API routes also require ChatGPT identity.
+- 600 distinct vocabulary cards: 490 A2 core (including foundations), 110 B1 expansion, plus 40 case exercises.
+- German ↔ English with independent schedules, noun articles/plurals, verb forms, and original B1 example sentences.
+- Rated recall: Again 1 minute; new Hard 6 minutes; new Good 10 minutes, then 1 day after the next Good; new Easy 4 days. Hard at the second learning step repeats 10 minutes. Mature reviews retain the existing SM-2-inspired schedule, not Anki FSRS.
+- Due cards first, then up to 20 new cards per session. When no other cards remain, short learning steps may appear up to 20 minutes early.
+- Auto repeat: a fixed set of up to 20 due, reviewed-today, then unseen cards cycles through three rounds. Timed reveal/advance, three speeds, manual reveal, pause/resume, and tab-hidden pause. This practice does not infer recall, submit ratings, or change review intervals.
+- Card faces are mounted individually with a fade/slide transition, avoiding mirrored text during card changes.
+- D1 progress is keyed by authenticated ChatGPT identity. Reviews retain idempotency and optimistic concurrency protection. Existing IDs, due dates, and saved progress are preserved.
+- Vienna-local daily goal/streak. Browser pronunciation uses installed German voices.
 
-## Content
+## Content and sources
 
-`data/vocabulary.ts` is an independently curated set combining A1 foundations and A2 everyday vocabulary; it is not the complete official exam word list. All English translations and case exercises were authored for this app. The case deck includes a brief genitive introduction. Goethe's official A2 exam resources are linked from the in-app guide: https://www.goethe.de/en/m/spr/prf/ueb/pa2.html
+This is an independently curated study bank for A2–B1 preparation, not the complete Goethe exam syllabus or an official Goethe product. Levels are study groupings: foundations remain in A2 core, and B1 expansion focuses on opinions, reasons, work, public services, travel problems, and connected sentences. Case exercises cover nominative, accusative, dative, two-way prepositions, and introductory genitive.
 
-## Development
+Headwords were checked against the official [Goethe A2 word list](https://www.goethe.de/pro/relaunch/prf/ms/Goethe-Zertifikat_A2_Wortliste.pdf) and [Goethe B1 word list](https://www.goethe.de/pro/relaunch/prf/id/Goethe-Zertifikat_B1_Wortliste.pdf). Inflections/reflexive forms and supporting foundations are retained where useful. Translations, learning notes, and examples are independently authored. Four older stretch terms outside these references remain API-valid for older clients but no longer appear in the active bank; their progress is not deleted.
 
-`npm run dev -- --port 5174` starts the portable local preview with simulated ChatGPT sign-in. `npx tsc --noEmit` checks types; `npm run build` produces Worker output. `npm run db:generate` creates migrations after schema edits. See Sites skills for publishing and local migration application; do not publish with Wrangler directly.
+Recall behavior draws on [Anki learning steps](https://docs.ankiweb.net/deck-options.html#learning-steps) and [Auto Advance](https://docs.ankiweb.net/deck-options.html#auto-advance). The app's hands-free practice is deliberately separate from remembered/forgotten ratings.
 
-Cloud migrations under `drizzle/` are schema-only. Local preview data is ignored and is never shipped in a deployment.
+## Development and verification
+
+- `npm run dev -- --port 5174`: portable preview with simulated sign-in.
+- `node --experimental-strip-types --test tests/recall.test.mjs`: learning transitions, legacy scheduling, selection and repeat-order regressions.
+- `npx tsc --noEmit`: type check.
+- `npm run build`: Worker build. Publish via the Sites workflow, never directly with Wrangler.
+
+Cloud migrations in `drizzle/` are schema-only. Local test data and source-reference downloads are ignored and never deployed. No schema migration is needed for the new learning-step state.

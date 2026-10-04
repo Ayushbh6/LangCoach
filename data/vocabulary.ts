@@ -1,11 +1,10 @@
-export type Difficulty = 'easy' | 'medium' | 'hard';
-export type Level = Difficulty | 'mixed';
-export type Card = { id: string; german: string; english: string; topic: string; kind: 'noun' | 'verb' | 'adjective' | 'expression' | 'case'; difficulty?: Difficulty; plural?: string; note?: string; example?: string; translation?: string };
+import { b1Rows } from './b1-expansion';
+export type Level = 'a2' | 'b1' | 'mixed';
+export type Card = { id: string; german: string; english: string; topic: string; kind: 'noun' | 'verb' | 'adjective' | 'expression' | 'case'; cefr?: 'a2' | 'b1'; plural?: string; note?: string; example?: string; translation?: string };
 export const levels: {value: Level; label: string; hint: string}[] = [
- {value:'easy',label:'Easy',hint:'Familiar basics, like der Mann and essen.'},
- {value:'medium',label:'Medium',hint:'Everyday vocabulary, like umsteigen and zufrieden.'},
- {value:'hard',label:'Hard',hint:'Stretch your vocabulary: verdient, vermeiden, zuverlässig.'},
- {value:'mixed',label:'Mixed',hint:'Practise words from every difficulty.'},
+ {value:'a2',label:'A2 core',hint:'Everyday German for Goethe A2 preparation, including essential foundations.'},
+ {value:'b1',label:'B1 expansion',hint:'Goethe B1 preparation: opinions, work, everyday problems, and connected sentences.'},
+ {value:'mixed',label:'A2 + B1',hint:'Mix the A2 core with the B1 expansion. All words are checked against Goethe vocabulary references.'},
 ];
 // Independently curated A1 foundations + A2 everyday vocabulary. Original translations.
 // Noun rows: German | English | plural. Other rows: German | English | learning note.
@@ -555,10 +554,6 @@ const foundations: Card[] = groups.flatMap(([topic, kind, rows]) => rows.trim().
  const [german, english, extra] = row.split('|');
  return { id: `${topic.toLowerCase().replace(/[^a-z]+/g,'-')}-${i+1}`, german: german.replace(/\u200b/g,''), english, topic, kind, ...(kind === 'noun' ? {plural: extra} : {note: extra}) };
 }));
-// Study difficulty is curated for this deck, not an official CEFR classification.
-const easyWords = new Set(`die Familie|der Freund|die Freundin|der Mann|die Frau|das Kind|die Eltern|der Vater|die Mutter|der Sohn|die Tochter|der Bruder|die Schwester|der Großvater|die Großmutter|der Onkel|die Tante|das Haus|die Wohnung|das Zimmer|die Küche|das Bad|der Garten|die Tür|das Fenster|der Tisch|der Stuhl|das Bett|das Sofa|die Lampe|das Brot|die Butter|der Käse|das Ei|die Milch|das Fleisch|der Fisch|das Gemüse|das Obst|der Apfel|die Banane|die Kartoffel|die Tomate|der Reis|die Suppe|der Salat|der Kuchen|das Wasser|der Saft|der Kaffee|der Tee|das Frühstück|die Stadt|die Straße|der Park|der Bahnhof|die Schule|das Kino|das Restaurant|der Supermarkt|das Hotel|die Tasche|das Ticket|der Zug|der Bus|die U-Bahn|das Fahrrad|das Auto|das Flugzeug|die Arbeit|das Büro|die Firma|die Pause|der Kurs|der Lehrer|die Lehrerin|der Student|die Studentin|der Kopf|das Auge|das Ohr|die Nase|der Mund|die Hand|der Arm|das Bein|der Fuß|der Arzt|die Ärztin|das Hobby|der Sport|die Musik|der Film|das Buch|das Foto|das Bild|die Party|der Geburtstag|das Wochenende|die Zeit|die Uhr|die Stunde|die Minute|der Tag|die Woche|der Monat|das Jahr|der Morgen|der Abend|die Nacht|das Geld|der Preis|die Farbe|die Jacke|die Hose|das Hemd|das T-Shirt|der Schuh|das Wetter|die Sonne|der Regen|der Schnee|der Sommer|der Winter|der Baum|die Blume|das Tier|der Hund|die Katze|die Sprache|das Wort|die Frage|die Antwort|das Telefon|das Handy|der Computer|das Internet|die Nummer|sein|haben|machen|gehen|kommen|fahren|wohnen|leben|heißen|sprechen|sagen|fragen|hören|sehen|lesen|schreiben|lernen|essen|trinken|kochen|kaufen|bezahlen|suchen|finden|schlafen|arbeiten|spielen|schwimmen|laufen|tanzen|singen|reisen|können|müssen|wollen|gut|schlecht|groß|klein|lang|kurz|neu|alt|jung|schön|leicht|schwer|einfach|richtig|falsch|glücklich|traurig|müde|krank|gesund|hungrig|durstig|nett|interessant|wichtig|heiß|kalt|warm|schnell|langsam|früh|spät|billig|teuer|heute|gestern|morgen|jetzt|immer|oft|nie|aber|oder|und|mit|für`.split('|'));
-const hardWords = new Set(`die Unterkunft|der Bahnsteig|die Besprechung|die Bewerbung|der Lebenslauf|der Vertrag|das Gehalt|das Zeugnis|die Versicherung|die Mannschaft|die Vergangenheit|die Umwelt|die Erklärung|die Bedeutung|die Erfahrung|die Entscheidung|entscheiden|erinnern|unterschreiben|ändern|wiederholen|verschieden|besetzt|beliebt|gefährlich|deshalb|dass`.split('|'));
-
 // Stable explicit IDs preserve review history when this collection grows.
 const stretchRows: [string, string, string, Card['kind'], string, string, string, string][] = [
  ['verdient','verdient','earned; deserved','expression','Work & study','Participle of verdienen. Also: er verdient = he earns / deserves.','Ich habe mir eine Pause verdient.','I have earned a break.'],
@@ -599,12 +594,21 @@ const stretchRows: [string, string, string, Card['kind'], string, string, string
  ['schliesslich','schließlich','finally; after all','expression','Connecting words','Meaning depends on context.','Schließlich haben wir eine Lösung gefunden.','Finally, we found a solution.'],
 ];
 const stretch: Card[] = stretchRows.map(([id,german,english,kind,topic,extra,example,translation])=>({
- id:`stretch-${id}`,german,english,kind,topic,difficulty:'hard',example,translation,
+ id:`stretch-${id}`,german,english,kind,topic,cefr:'b1',example,translation,
  ...(kind==='noun'?{plural:extra}:{note:extra}),
 }));
-export const vocabulary: Card[] = [
- ...stretch,
- ...foundations.map(c=>({...c,difficulty:(easyWords.has(c.german)?'easy':hardWords.has(c.german)?'hard':'medium') as Difficulty})),
-];
-export function matchesLevel(card: Card, level: Level) { return level==='mixed'||card.difficulty===level; }
-export const topics = [...new Set(foundations.map(c => c.topic))];
+// Progress IDs stay stable. Four older stretch items outside the reference lists remain
+// addressable by the API for old clients, but are excluded from the A2–B1 study bank.
+const b1Ids = new Set(["stretch-vermeiden", "stretch-zuverlaessig", "stretch-erledigen", "stretch-voraussetzung", "stretch-verantwortung", "stretch-selbststaendig", "stretch-absagen", "stretch-beantragen", "stretch-genehmigen", "stretch-ablehnen", "stretch-ueberzeugen", "stretch-schaetzen", "stretch-sich-lohnen", "stretch-enttaeuscht", "stretch-erleichtert", "stretch-gruendlich", "stretch-gelegenheit", "stretch-fortschritt", "stretch-herausforderung", "stretch-zusammenhang", "stretch-trotzdem", "stretch-obwohl", "stretch-inzwischen", "stretch-allerdings", "stretch-voraussichtlich", "stretch-schliesslich", "work-study-10", "work-study-12", "health-body-21", "health-body-25", "time-plans-20", "time-plans-21", "shopping-clothes-5", "nature-weather-8", "nature-weather-25", "communication-22", "communication-23", "communication-25", "activities-movement-9", "activities-movement-14", "thinking-organising-11", "describing-things-8"]);
+const extensionIds = new Set(["stretch-beruecksichtigen", "stretch-nachweisen", "stretch-angemessen", "stretch-verfuegbar"]);
+const existing = [...stretch, ...foundations];
+const existingWords = new Set(existing.map(c=>c.german));
+const expansion: Card[] = b1Rows.trim().split('\n').filter(r=>!existingWords.has(r.split('|')[0])).map(row=>{
+ const [german,english,kind,topic,extra,example,translation]=row.split('|');
+ const id='b1-'+german.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').toLowerCase().replace(/[^a-z]+/g,'-');
+ return {id,german,english,kind:kind as Card['kind'],topic,cefr:'b1',example,translation,...(kind==='noun'?{plural:extra}:{note:extra})};
+});
+export const allVocabulary: Card[] = [...existing.map(c=>({...c,cefr:(b1Ids.has(c.id)?'b1':'a2') as 'a2'|'b1'})),...expansion];
+export const vocabulary = allVocabulary.filter(c=>!extensionIds.has(c.id));
+export function matchesLevel(card:Card,level:Level) {return level==='mixed'||card.cefr===level;}
+export const topics = [...new Set(vocabulary.map(c=>c.topic))];

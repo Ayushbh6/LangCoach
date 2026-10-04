@@ -1,10 +1,10 @@
 import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '../../chatgpt-auth';
-import { vocabulary } from '../../../data/vocabulary';
+import { allVocabulary } from '../../../data/vocabulary';
 import { cases } from '../../../data/cases';
 import { schedule, type Progress, type Rating } from '../../../lib/scheduler';
 export const dynamic = 'force-dynamic';
-const ids = new Set([...vocabulary.flatMap(c=>[`${c.id}:de`,`${c.id}:en`]),...cases.map(c=>`${c.id}:de`)]);
+const ids = new Set([...allVocabulary.flatMap(c=>[`${c.id}:de`,`${c.id}:en`]),...cases.map(c=>`${c.id}:de`)]);
 function database() { if(!env.DB) throw new Error('Storage unavailable'); return env.DB; }
 function fromRow(r: Record<string, unknown>): Progress {
  return {cardId:String(r.card_id),due:Number(r.due),interval:Number(r.interval),ease:Number(r.ease),reps:Number(r.reps),lapses:Number(r.lapses),state:String(r.state),updatedAt:Number(r.updated_at)};
