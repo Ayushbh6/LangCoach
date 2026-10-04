@@ -1,4 +1,12 @@
-export type Card = { id: string; german: string; english: string; topic: string; kind: 'noun' | 'verb' | 'adjective' | 'expression' | 'case'; plural?: string; note?: string; example?: string; translation?: string };
+export type Difficulty = 'easy' | 'medium' | 'hard';
+export type Level = Difficulty | 'mixed';
+export type Card = { id: string; german: string; english: string; topic: string; kind: 'noun' | 'verb' | 'adjective' | 'expression' | 'case'; difficulty?: Difficulty; plural?: string; note?: string; example?: string; translation?: string };
+export const levels: {value: Level; label: string; hint: string}[] = [
+ {value:'easy',label:'Easy',hint:'Familiar basics, like der Mann and essen.'},
+ {value:'medium',label:'Medium',hint:'Everyday vocabulary, like umsteigen and zufrieden.'},
+ {value:'hard',label:'Hard',hint:'Stretch your vocabulary: verdient, vermeiden, zuverlässig.'},
+ {value:'mixed',label:'Mixed',hint:'Practise words from every difficulty.'},
+];
 // Independently curated A1 foundations + A2 everyday vocabulary. Original translations.
 // Noun rows: German | English | plural. Other rows: German | English | learning note.
 const groups: [string, Card['kind'], string][] = [
@@ -543,8 +551,60 @@ mit|with|always dative: mit dem Bus
 für|for|always accusative: für den Freund
 `],
 ];
-export const vocabulary: Card[] = groups.flatMap(([topic, kind, rows]) => rows.trim().split('\n').map((row, i) => {
+const foundations: Card[] = groups.flatMap(([topic, kind, rows]) => rows.trim().split('\n').map((row, i) => {
  const [german, english, extra] = row.split('|');
  return { id: `${topic.toLowerCase().replace(/[^a-z]+/g,'-')}-${i+1}`, german: german.replace(/\u200b/g,''), english, topic, kind, ...(kind === 'noun' ? {plural: extra} : {note: extra}) };
 }));
-export const topics = [...new Set(vocabulary.map(c => c.topic))];
+// Study difficulty is curated for this deck, not an official CEFR classification.
+const easyWords = new Set(`die Familie|der Freund|die Freundin|der Mann|die Frau|das Kind|die Eltern|der Vater|die Mutter|der Sohn|die Tochter|der Bruder|die Schwester|der Großvater|die Großmutter|der Onkel|die Tante|das Haus|die Wohnung|das Zimmer|die Küche|das Bad|der Garten|die Tür|das Fenster|der Tisch|der Stuhl|das Bett|das Sofa|die Lampe|das Brot|die Butter|der Käse|das Ei|die Milch|das Fleisch|der Fisch|das Gemüse|das Obst|der Apfel|die Banane|die Kartoffel|die Tomate|der Reis|die Suppe|der Salat|der Kuchen|das Wasser|der Saft|der Kaffee|der Tee|das Frühstück|die Stadt|die Straße|der Park|der Bahnhof|die Schule|das Kino|das Restaurant|der Supermarkt|das Hotel|die Tasche|das Ticket|der Zug|der Bus|die U-Bahn|das Fahrrad|das Auto|das Flugzeug|die Arbeit|das Büro|die Firma|die Pause|der Kurs|der Lehrer|die Lehrerin|der Student|die Studentin|der Kopf|das Auge|das Ohr|die Nase|der Mund|die Hand|der Arm|das Bein|der Fuß|der Arzt|die Ärztin|das Hobby|der Sport|die Musik|der Film|das Buch|das Foto|das Bild|die Party|der Geburtstag|das Wochenende|die Zeit|die Uhr|die Stunde|die Minute|der Tag|die Woche|der Monat|das Jahr|der Morgen|der Abend|die Nacht|das Geld|der Preis|die Farbe|die Jacke|die Hose|das Hemd|das T-Shirt|der Schuh|das Wetter|die Sonne|der Regen|der Schnee|der Sommer|der Winter|der Baum|die Blume|das Tier|der Hund|die Katze|die Sprache|das Wort|die Frage|die Antwort|das Telefon|das Handy|der Computer|das Internet|die Nummer|sein|haben|machen|gehen|kommen|fahren|wohnen|leben|heißen|sprechen|sagen|fragen|hören|sehen|lesen|schreiben|lernen|essen|trinken|kochen|kaufen|bezahlen|suchen|finden|schlafen|arbeiten|spielen|schwimmen|laufen|tanzen|singen|reisen|können|müssen|wollen|gut|schlecht|groß|klein|lang|kurz|neu|alt|jung|schön|leicht|schwer|einfach|richtig|falsch|glücklich|traurig|müde|krank|gesund|hungrig|durstig|nett|interessant|wichtig|heiß|kalt|warm|schnell|langsam|früh|spät|billig|teuer|heute|gestern|morgen|jetzt|immer|oft|nie|aber|oder|und|mit|für`.split('|'));
+const hardWords = new Set(`die Unterkunft|der Bahnsteig|die Besprechung|die Bewerbung|der Lebenslauf|der Vertrag|das Gehalt|das Zeugnis|die Versicherung|die Mannschaft|die Vergangenheit|die Umwelt|die Erklärung|die Bedeutung|die Erfahrung|die Entscheidung|entscheiden|erinnern|unterschreiben|ändern|wiederholen|verschieden|besetzt|beliebt|gefährlich|deshalb|dass`.split('|'));
+
+// Stable explicit IDs preserve review history when this collection grows.
+const stretchRows: [string, string, string, Card['kind'], string, string, string, string][] = [
+ ['verdient','verdient','earned; deserved','expression','Work & study','Participle of verdienen. Also: er verdient = he earns / deserves.','Ich habe mir eine Pause verdient.','I have earned a break.'],
+ ['verdienen','verdienen','to earn; to deserve','verb','Work & study','hat verdient','Sie verdient mehr als früher.','She earns more than before.'],
+ ['vermeiden','vermeiden','to avoid','verb','Thinking & organising','vermied · hat vermieden','Wir möchten Fehler vermeiden.','We would like to avoid mistakes.'],
+ ['zuverlaessig','zuverlässig','reliable','adjective','Feelings & qualities','A person or thing you can depend on.','Sie ist sehr zuverlässig.','She is very reliable.'],
+ ['erreichen','erreichen','to reach; to achieve','verb','Activities & movement','hat erreicht','Wir haben unser Ziel erreicht.','We have achieved our goal.'],
+ ['erledigen','erledigen','to take care of; to complete','verb','Work & study','hat erledigt','Ich muss diese Aufgabe heute erledigen.','I have to complete this task today.'],
+ ['bewerben','sich bewerben','to apply for a job','verb','Work & study','sich bewerben um + accusative · hat sich beworben','Ich bewerbe mich um eine Stelle.','I am applying for a position.'],
+ ['voraussetzung','die Voraussetzung','prerequisite; condition','noun','Work & study','Voraussetzungen','Erfahrung ist eine wichtige Voraussetzung.','Experience is an important prerequisite.'],
+ ['verantwortung','die Verantwortung','responsibility','noun','Work & study','usually singular','Ich übernehme die Verantwortung.','I am taking responsibility.'],
+ ['selbststaendig','selbstständig','independent; self-employed','adjective','Work & study','Also spelled selbständig.','Sie arbeitet selbstständig.','She works independently.'],
+ ['vereinbaren','vereinbaren','to arrange; to agree on','verb','Work & study','hat vereinbart','Wir haben einen Termin vereinbart.','We have arranged an appointment.'],
+ ['absagen','absagen','to cancel; to decline','verb','Time & plans','separable: ich sage ab · hat abgesagt','Ich muss den Termin absagen.','I have to cancel the appointment.'],
+ ['verschieben','verschieben','to postpone; to move','verb','Time & plans','verschob · hat verschoben','Können wir das Treffen verschieben?','Can we postpone the meeting?'],
+ ['beantragen','beantragen','to apply for; to request officially','verb','Work & study','hat beantragt','Ich habe ein Visum beantragt.','I have applied for a visa.'],
+ ['genehmigen','genehmigen','to approve; to authorize','verb','Work & study','hat genehmigt','Mein Urlaub wurde genehmigt.','My leave was approved.'],
+ ['ablehnen','ablehnen','to reject; to decline','verb','Communication','separable: ich lehne ab · hat abgelehnt','Sie hat das Angebot abgelehnt.','She declined the offer.'],
+ ['ueberzeugen','überzeugen','to convince','verb','Communication','jemanden von etwas überzeugen · hat überzeugt','Das Ergebnis hat mich überzeugt.','The result convinced me.'],
+ ['beruecksichtigen','berücksichtigen','to take into account','verb','Thinking & organising','hat berücksichtigt','Wir müssen die Kosten berücksichtigen.','We have to take the costs into account.'],
+ ['schaetzen','schätzen','to estimate; to appreciate','verb','Thinking & organising','hat geschätzt','Ich schätze deine Hilfe.','I appreciate your help.'],
+ ['sich-lohnen','sich lohnen','to be worth it','verb','Everyday verbs','hat sich gelohnt','Die Reise hat sich gelohnt.','The trip was worth it.'],
+ ['nachweisen','nachweisen','to prove; to demonstrate','verb','Work & study','separable: ich weise nach · hat nachgewiesen','Ich muss meine Erfahrung nachweisen.','I have to demonstrate my experience.'],
+ ['enttaeuscht','enttäuscht','disappointed','adjective','Feelings & qualities','enttäuscht von + dative','Ich bin vom Ergebnis enttäuscht.','I am disappointed with the result.'],
+ ['erleichtert','erleichtert','relieved','adjective','Feelings & qualities','Often used with sein.','Ich bin erleichtert, dass alles gut gegangen ist.','I am relieved that everything went well.'],
+ ['angemessen','angemessen','appropriate; reasonable','adjective','Everyday descriptions','Used for behaviour, prices, or responses.','Der Preis ist angemessen.','The price is reasonable.'],
+ ['verfuegbar','verfügbar','available','adjective','Everyday descriptions','Useful for availability of people or things.','Der Termin ist noch verfügbar.','The appointment slot is still available.'],
+ ['gruendlich','gründlich','thorough; thoroughly','adjective','Everyday descriptions','Used for careful work or checking.','Ich habe alles gründlich geprüft.','I checked everything thoroughly.'],
+ ['gelegenheit','die Gelegenheit','opportunity; occasion','noun','Time & plans','Gelegenheiten','Das ist eine gute Gelegenheit.','This is a good opportunity.'],
+ ['fortschritt','der Fortschritt','progress; advance','noun','Work & study','Fortschritte','Ich mache Fortschritte beim Deutschlernen.','I am making progress in learning German.'],
+ ['herausforderung','die Herausforderung','challenge','noun','Work & study','Herausforderungen','Das ist eine neue Herausforderung.','This is a new challenge.'],
+ ['zusammenhang','der Zusammenhang','connection; context','noun','Communication','Zusammenhänge','Ich verstehe den Zusammenhang nicht.','I do not understand the connection.'],
+ ['trotzdem','trotzdem','nevertheless; even so','expression','Connecting words','Main-clause connector: verb in second position.','Es regnet. Trotzdem gehe ich spazieren.','It is raining. Even so, I am going for a walk.'],
+ ['obwohl','obwohl','although','expression','Connecting words','Introduces a subordinate clause: verb last.','Ich gehe spazieren, obwohl es regnet.','I am going for a walk although it is raining.'],
+ ['inzwischen','inzwischen','meanwhile; by now','expression','Connecting words','Useful for a situation that has changed.','Inzwischen spreche ich besser Deutsch.','By now, I speak better German.'],
+ ['allerdings','allerdings','however; admittedly','expression','Connecting words','Adds a qualification or contrast.','Das ist möglich, allerdings dauert es länger.','That is possible; however, it takes longer.'],
+ ['voraussichtlich','voraussichtlich','probably; as expected','expression','Time & plans','Used for a prediction or expected timing.','Der Zug kommt voraussichtlich um acht Uhr.','The train is expected to arrive at eight.'],
+ ['schliesslich','schließlich','finally; after all','expression','Connecting words','Meaning depends on context.','Schließlich haben wir eine Lösung gefunden.','Finally, we found a solution.'],
+];
+const stretch: Card[] = stretchRows.map(([id,german,english,kind,topic,extra,example,translation])=>({
+ id:`stretch-${id}`,german,english,kind,topic,difficulty:'hard',example,translation,
+ ...(kind==='noun'?{plural:extra}:{note:extra}),
+}));
+export const vocabulary: Card[] = [
+ ...stretch,
+ ...foundations.map(c=>({...c,difficulty:(easyWords.has(c.german)?'easy':hardWords.has(c.german)?'hard':'medium') as Difficulty})),
+];
+export function matchesLevel(card: Card, level: Level) { return level==='mixed'||card.difficulty===level; }
+export const topics = [...new Set(foundations.map(c => c.topic))];
