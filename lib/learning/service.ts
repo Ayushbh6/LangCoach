@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { flashcardFor, deckCards, cardLevel, type RecallDeck } from "./flashcards";
 import { buildActivity } from "./activity";
 import { checks } from "../../data/checks";
 import { lessons } from "../../data/lessons";
@@ -356,6 +357,7 @@ function cardTask(cardId: string, s: State): Task | undefined {
     explanation: note || `${german} — ${english}`,
     block: "recall",
     cardId,
+    flashcard: flashcardFor(cardId, catalogue(s).find(l => bare.startsWith(`phrase-${l.id}-`)) ?? currentLesson(s)),
     cardVersion: Number(
       s.cards[cardId]?.data.last_review
         ? new Date(String(s.cards[cardId].data.last_review)).getTime()
@@ -372,17 +374,18 @@ function makeSession(
   sessionId: string,
   blocks: Block[],
   extra = false,
+  deck: RecallDeck = "daily",
 ): Session {
   const today = studyDate();
   const introduced = s.introduced[today] ?? [];
-  const newIds = lesson.words
-    .map((_, i) => `phrase-${lesson.id}-${i}:en`)
+  const pool = deck === "daily" ? lesson.words.map((_, i) => `phrase-${lesson.id}-${i}:de`) : deckCards(deck).map(c => `${c.id}:de`);
+  const newIds = pool
     .filter((id) => !s.cards[id] && !introduced.includes(id))
     .slice(0, Math.max(0, s.settings.newLimit - introduced.length));
   const due = Object.keys(s.cards)
-    .filter((id) => s.cards[id].due <= Date.now())
+    .filter((id) => s.cards[id].due <= Date.now() && (deck === "daily" || pool.includes(id)))
     .sort((a, b) => s.cards[a].due - s.cards[b].due);
-  const recall = [...due, ...newIds]
+  const recall = (extra ? [...new Set([...due, ...pool])].slice(0,20) : [...due, ...newIds])
     .slice(0, Math.max(3, Math.min(20, s.settings.minutes * 2)))
     .map((x) => cardTask(x, s))
     .filter((x): x is Task => !!x);
@@ -414,7 +417,7 @@ function makeSession(
   };
   for (const task of recall) {
     if (task.cardId && !s.cards[task.cardId]) {
-      task.context = `${task.answer[0]} — ${task.prompt}. ${task.explanation}`;
+      // New flashcards teach meaning on the back, then return for later retrieval.
       task.supports = ["initial teaching"];
     }
   }
@@ -438,22 +441,24 @@ function makeSession(
     failures: {},
     complete: tasks.length === 0,
     blockOrder: blocks,
+    recallDeck: deck,
+    recallExtra: extra,
   };
 }
 function safeSession(session?: Session) {
   if (!session) return null;
   return {
     ...session,
-    tasks: session.tasks.map(
-      ({ answer, model, transcript, explanation, hint, ...t }) => ({
-        ...t,
-        answer: undefined,
-        model: undefined,
-        transcript: undefined,
-        explanation: undefined,
-        hint: undefined,
-      }),
-    ),
+    tasks: session.tasks.map(({ answer, model, transcript, explanation, hint, flashcard, ...t }) => {
+      const back = t.cardId ? flashcard ?? flashcardFor(t.cardId, session.lesson) : undefined;
+      const revealed = t.supports.includes("flip");
+      return {
+        ...t, context: t.cardId ? undefined : t.context,
+        revealed, flashcard: revealed ? back : undefined,
+        answer: undefined, model: undefined, transcript: undefined,
+        explanation: undefined, hint: undefined,
+      };
+    }),
     lesson: { ...session.lesson, exercises: undefined },
   };
 }
@@ -488,6 +493,7 @@ export async function start(db: D1Database, user: string, raw: unknown) {
       restart: z.boolean().optional(),
       weekly: z.boolean().optional(),
       cardId: z.string().optional(),
+      deck: z.enum(["daily", "a1", "a2", "b1", "cases"]).optional(),
     })
     .strict()
     .parse(raw);
@@ -500,17 +506,26 @@ export async function start(db: D1Database, user: string, raw: unknown) {
       : currentLesson(s);
     if (!lesson) throw new LearningError("Unknown lesson.");
     const blocks = p.blocks ?? s.settings.order;
+    const deck = p.deck ?? "daily";
+    if (s.session && !s.session.complete && !p.cardId && !p.weekly &&
+      s.session.lesson.id === lesson.id &&
+      (s.session.recallDeck ?? "daily") === deck &&
+      !!s.session.recallExtra === !!p.extra &&
+      JSON.stringify(s.session.blockOrder) === JSON.stringify(blocks))
+      return { result: { session: safeSession(s.session) } };
     const paused = s.pausedSessions ?? [];
     const resume = paused.findIndex(
       (x) =>
         !x.complete &&
+        (x.recallDeck ?? "daily") === deck &&
+        !!x.recallExtra === !!p.extra &&
         x.lesson.id === lesson.id &&
         JSON.stringify(x.blockOrder) === JSON.stringify(blocks),
     );
     const next =
       resume >= 0 && !p.weekly && !p.cardId
         ? paused.splice(resume, 1)[0]
-        : makeSession(s, lesson, p.requestId, blocks, p.extra);
+        : makeSession(s, lesson, p.requestId, blocks, p.extra, deck);
     if (p.weekly) {
       const seen = new Set(
         (await events(db, user, "attempt")).map((e) => e.evidence?.exerciseId),
@@ -573,13 +588,14 @@ export async function support(db: D1Database, user: string, raw: unknown) {
       requestId: id,
       sessionId: id,
       index: z.number().int().min(0),
-      kind: z.enum(["hint", "answer", "transcript", "audio", "example"]),
+      kind: z.enum(["hint", "answer", "transcript", "audio", "example", "flip"]),
     })
     .strict()
     .parse(raw);
   return mutate(db, user, p.requestId, "support", p, (s) => {
     const { session, task } = active(s, p.sessionId, p.index);
     let text = "";
+    if (p.kind === "flip" && !task.cardId) throw new LearningError("Only flashcards can be flipped.");
     if (p.kind === "audio") {
       if (!task.audio) throw new LearningError("This task has no audio.");
       task.audioPlayed = true;
@@ -604,6 +620,7 @@ export async function attempt(db: D1Database, user: string, raw: unknown) {
       index: z.number().int().min(0),
       answer: z.string().max(3000),
       rating: z.enum(["again", "hard", "good", "easy"]).optional(),
+      flashcard: z.boolean().optional(),
     })
     .strict()
     .parse(raw);
@@ -611,6 +628,8 @@ export async function attempt(db: D1Database, user: string, raw: unknown) {
     const { session, task } = active(s, p.sessionId, p.index);
     if (!p.answer.trim() && !p.rating)
       throw new LearningError("Try an answer, or choose I don’t know.");
+    if (p.flashcard && (!task.cardId || !p.rating || !task.supports.includes("flip")))
+      throw new LearningError("Flip the card before rating your recall.");
     const now = Date.now();
     const all = await events(db, user, "attempt");
     const previous = all
@@ -635,11 +654,12 @@ export async function attempt(db: D1Database, user: string, raw: unknown) {
     // Lexical recall is self-rated when spelling/translation differs; preserve the first answer and label the source.
     if (task.cardId && p.rating && p.rating !== "again" && result !== "correct")
       result = "self-rated";
+    if (p.flashcard) result = "self-rated";
     const feedback: Feedback = {
       result,
       answer: task.model ?? task.answer.join(" / "),
       explanation: task.explanation,
-      independent: unaided && audioOK && result === "correct",
+      independent: !p.flashcard && unaided && audioOK && result === "correct",
       recorded: true,
     };
     if (
@@ -665,7 +685,7 @@ export async function attempt(db: D1Database, user: string, raw: unknown) {
           409,
         );
       const rating =
-        !unaided || result === "incorrect" || p.rating === "again"
+        p.flashcard ? p.rating! : !unaided || result === "incorrect" || p.rating === "again"
           ? "again"
           : (p.rating ?? "good");
       const next = review(old, rating, now, studyDate(now));
@@ -716,7 +736,7 @@ export async function attempt(db: D1Database, user: string, raw: unknown) {
       scheduled: task.scheduled,
       feedback,
     };
-    if (result === "incorrect") {
+    if (result === "incorrect" || (p.flashcard && p.rating === "again")) {
       const failures = (session.failures[task.target] ?? 0) + 1;
       session.failures[task.target] = failures;
       s.priorities = [
@@ -730,6 +750,7 @@ export async function attempt(db: D1Database, user: string, raw: unknown) {
           repair: true,
           scheduled: false,
           supports: ["correction shown"],
+          revealed: false,
           attemptNumber: failures,
         };
         session.tasks.splice(
@@ -931,7 +952,7 @@ export async function progress(db: D1Database, user: string) {
       return {
         target,
         status:
-          last?.result === "incorrect"
+          (last?.result === "incorrect" || last?.rating === "again")
             ? "Needs review"
             : stable
               ? "Used independently"
@@ -1092,16 +1113,16 @@ export async function prepare(db: D1Database, publication?: unknown) {
 
 export function library(query: string) {
   const q = query.toLocaleLowerCase();
-  return allVocabulary
+  return [...deckCards("daily"), ...deckCards("cases")]
     .filter((c) =>
       `${c.german} ${c.english} ${c.topic}`.toLocaleLowerCase().includes(q),
     )
-    .slice(0, 40)
     .map((c) => ({
       id: c.id,
       german: c.german,
       english: c.english,
       note: c.note,
       plural: c.plural,
+      level: c.kind === "case" ? "cases" : cardLevel(c),
     }));
 }

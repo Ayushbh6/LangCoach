@@ -1,3 +1,4 @@
+import { foundationCards } from './a1-foundations';
 import { b1Rows } from './b1-expansion';
 export type Level = 'a2' | 'b1' | 'mixed';
 export type Card = { id: string; german: string; english: string; topic: string; kind: 'noun' | 'verb' | 'adjective' | 'expression' | 'case'; cefr?: 'a2' | 'b1'; plural?: string; note?: string; example?: string; translation?: string };
@@ -608,7 +609,8 @@ const expansion: Card[] = b1Rows.trim().split('\n').filter(r=>!existingWords.has
  const id='b1-'+german.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').toLowerCase().replace(/[^a-z]+/g,'-');
  return {id,german,english,kind:kind as Card['kind'],topic,cefr:'b1',example,translation,...(kind==='noun'?{plural:extra}:{note:extra})};
 });
-export const allVocabulary: Card[] = [...existing.map(c=>({...c,cefr:(b1Ids.has(c.id)?'b1':'a2') as 'a2'|'b1'})),...expansion];
+const originalVocabulary: Card[] = [...existing.map(c=>({...c,cefr:(b1Ids.has(c.id)?'b1':'a2') as 'a2'|'b1'})),...expansion];
+export const allVocabulary: Card[] = [...originalVocabulary, ...foundationCards.filter(c=>!originalVocabulary.some(old=>old.german===c.german))];
 export const vocabulary = allVocabulary.filter(c=>!extensionIds.has(c.id));
 export function matchesLevel(card:Card,level:Level) {return level==='mixed'||card.cefr===level;}
 export const topics = [...new Set(vocabulary.map(c=>c.topic))];

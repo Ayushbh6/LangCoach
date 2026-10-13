@@ -19,6 +19,7 @@ import {
   Flag,
   WifiOff,
 } from "lucide-react";
+import { RecallCard, CardDetails } from "./recall-card";
 import { ActivityTracker } from "./activity-tracker";
 import type { Activity } from "../lib/learning/activity";
 import { curriculum } from "../data/curriculum";
@@ -29,6 +30,8 @@ import type {
   Task,
   Block,
 } from "../lib/learning/types";
+type LibraryCard = { id: string; german: string; english: string; level: string };
+type RecallDeck = "daily" | "a1" | "a2" | "b1" | "cases";
 type Home = {
   version: number;
   updatedAt: number;
@@ -137,8 +140,12 @@ export default function Study({ userKey }: { userKey: string }) {
     [lastAttempt, setLastAttempt] = useState(""),
     [search, setSearch] = useState(""),
     [library, setLibrary] = useState<
-      { id: string; german: string; english: string }[] | null
+      LibraryCard[] | null
     >(null);
+  const [libraryLevel, setLibraryLevel] = useState("all");
+  const [librarySearch, setLibrarySearch] = useState("");
+  const [libraryVisible, setLibraryVisible] = useState(40);
+  const libraryMatches = library?.filter(c => (libraryLevel === "all" || c.level === libraryLevel) && `${c.german} ${c.english}`.toLowerCase().includes(librarySearch.toLowerCase())) ?? [];
   const input = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null),
     audio = useRef<HTMLAudioElement | null>(null);
   const storage = `german-me:${userKey}:`;
@@ -232,7 +239,7 @@ export default function Study({ userKey }: { userKey: string }) {
     blocks?: Block[],
     lessonId?: string,
     extra = false,
-    options: { weekly?: boolean; cardId?: string } = {},
+    options: { weekly?: boolean; cardId?: string; deck?: RecallDeck } = {},
   ) {
     await run(async () => {
       const continuing =
@@ -258,15 +265,16 @@ export default function Study({ userKey }: { userKey: string }) {
       }
     });
   }
-  async function submit(rating?: string, retry?: Record<string, unknown>) {
+  async function submit(rating?: string, retry?: Record<string, unknown>, flashcard = false) {
     if (!session || !task) return;
     const payload = retry ?? {
       action: "attempt",
       requestId: uid(),
       sessionId: session.id,
       index: session.index,
-      answer,
+      answer: flashcard ? "" : answer,
       rating,
+      ...(flashcard ? { flashcard: true } : {}),
     };
     await run(async () => {
       try {
@@ -275,7 +283,7 @@ export default function Study({ userKey }: { userKey: string }) {
       setPending(payload);
       const res = await post(payload);
       setHome((h) => (h ? { ...h, session: res.session } : h));
-      setFeedback(res.feedback);
+      setFeedback(payload.flashcard ? null : res.feedback);
       setLastAttempt(String(payload.requestId));
       setPending(null);
       try {
@@ -292,7 +300,7 @@ export default function Study({ userKey }: { userKey: string }) {
     if (!pending) return;
     await run(async () => {
       const res = await post(pending);
-      setFeedback(res.feedback);
+      setFeedback(pending.flashcard ? null : res.feedback);
       setLastAttempt(String(pending.requestId));
       setPending(null);
       localStorage.removeItem(storage + "pending");
@@ -301,7 +309,7 @@ export default function Study({ userKey }: { userKey: string }) {
     });
   }
   async function help(
-    kind: "hint" | "answer" | "transcript" | "example" | "audio",
+    kind: "hint" | "answer" | "transcript" | "example" | "audio" | "flip",
   ) {
     if (!session || !task) return;
     await run(async () => {
@@ -448,6 +456,7 @@ export default function Study({ userKey }: { userKey: string }) {
         ) : (
           <button
             className="text-button"
+            disabled={busy}
             onClick={() => {
               audio.current?.pause();
               setFocused(false);
@@ -566,6 +575,20 @@ export default function Study({ userKey }: { userKey: string }) {
                   <Flag size={15} /> Flag correction
                 </button>
               </div>
+            ) : task?.cardId ? (
+              <>
+                <RecallCard key={`${session.id}-${session.index}`} task={task} busy={busy} pending={!!pending}
+                  onFlip={() => help("flip")} onRate={(rating) => submit(rating, undefined, true)} />
+                {session.index > 0 && session.tasks[session.index-1]?.flashcard && (
+                  <details className="previous-card" key={`previous-${session.index}`}>
+                    <summary>Previous card · look back</summary>
+                    <p className="small muted">Review only. Your previous rating stays saved.</p>
+                    <h3>{session.tasks[session.index-1].flashcard!.german}</h3>
+                    <p>{session.tasks[session.index-1].flashcard!.english}</p>
+                    <CardDetails card={session.tasks[session.index-1].flashcard!}/>
+                  </details>
+                )}
+              </>
             ) : task ? (
               <div className="question" key={`${session.id}-${session.index}`}>
                 <p className="context-label">
@@ -912,13 +935,13 @@ export default function Study({ userKey }: { userKey: string }) {
                       run(async () =>
                         setLibrary(
                           await api<
-                            { id: string; german: string; english: string }[]
+                            LibraryCard[]
                           >("library"),
                         ),
                       )
                     }
                   >
-                    Browse the vocabulary library <BookOpen size={16} />
+                    Browse flashcards · A1, A2, B1 & cases <BookOpen size={16} />
                   </button>
                 </div>
                 <div className="scenario-list">
@@ -1124,39 +1147,22 @@ export default function Study({ userKey }: { userKey: string }) {
             >
               <X />
             </button>
-            <h2>Your vocabulary library</h2>
-            <p className="muted">
-              600 words remain available. Choose a direction; each has its own
-              schedule.
-            </p>
-            <input
-              aria-label="Search vocabulary"
-              placeholder="Search German or English…"
-              onChange={(e) =>
-                run(async () =>
-                  setLibrary(
-                    await api<
-                      { id: string; german: string; english: string }[]
-                    >(`library&q=${encodeURIComponent(e.target.value)}`),
-                  ),
-                )
-              }
-            />
-            {library.map((c) => (
+            <h2>Your flashcard library</h2>
+            <p className="muted">{library.filter(c => c.level !== "cases").length} vocabulary cards · {library.filter(c => c.level === "cases").length} case cards. This is a growing selection, not the complete Goethe word lists.</p>
+            <div className="deck-filters" aria-label="Flashcard deck">
+              {[["all","All"],["a1","A1"],["a2","A2"],["b1","B1"],["cases","Cases"]].map(([value,label]) => <button key={value} aria-pressed={libraryLevel===value} onClick={()=>{setLibraryLevel(value);setLibraryVisible(40);}}>{label} · {library.filter(c=>value==="all" || c.level===value).length}</button>)}
+            </div>
+            {libraryLevel !== "all" && <div className="deck-actions">
+              <button className="primary" onClick={()=>{setLibrary(null);begin(["recall"],undefined,false,{deck:libraryLevel as RecallDeck});}}>Study this deck <ArrowRight size={16}/></button>
+              <button className="text-button" onClick={()=>{setLibrary(null);begin(["recall"],undefined,true,{deck:libraryLevel as RecallDeck});}}>Extra practice · no schedule changes</button>
+            </div>}
+            <input aria-label="Search vocabulary" placeholder="Search German or English…" value={librarySearch} onChange={e=>{setLibrarySearch(e.target.value);setLibraryVisible(40);}}/>
+            <p className="small muted">New cards enter gradually. Daily Recall collects due cards across your decks. Existing reverse cards keep their own schedules.</p>
+            {libraryMatches.slice(0,libraryVisible).map((c) => (
               <div className="library-row" key={c.id}>
                 <strong lang="de">{c.german}</strong>
                 <p>{c.english}</p>
-                <button
-                  className="text-button"
-                  onClick={() => {
-                    setLibrary(null);
-                    begin(["recall"], undefined, false, {
-                      cardId: `${c.id}:en`,
-                    });
-                  }}
-                >
-                  Produce German
-                </button>
+
                 <button
                   className="text-button"
                   onClick={() => {
@@ -1166,14 +1172,14 @@ export default function Study({ userKey }: { userKey: string }) {
                     });
                   }}
                 >
-                  Recall meaning
+                  Study flashcard
                 </button>
                 <button
                   className="text-button"
                   onClick={() => {
                     setLibrary(null);
                     begin(["recall"], undefined, true, {
-                      cardId: `${c.id}:en`,
+                      cardId: `${c.id}:de`,
                     });
                   }}
                 >
@@ -1181,6 +1187,12 @@ export default function Study({ userKey }: { userKey: string }) {
                 </button>
               </div>
             ))}
+            {libraryMatches.length > libraryVisible && <button className="text-button" onClick={()=>setLibraryVisible(n=>n+40)}>Show more cards · {Math.min(libraryVisible,libraryMatches.length)} of {libraryMatches.length}</button>}
+            <details className="vocabulary-sources"><summary>Vocabulary sources & coverage</summary><p>Goethe word lists guide the vocabulary selection. English meanings, practice examples and case cards are our teaching material, not an official Goethe deck. A1 labels use matched A1 headwords; other level labels are teaching bands. Full official-list coverage is not yet complete.</p>
+              <a href="https://www.goethe.de/pro/relaunch/prf/sr/A1_SD1_Wortliste_02.pdf" target="_blank" rel="noreferrer">Goethe A1 list</a>{" · "}
+              <a href="https://www.goethe.de/pro/relaunch/prf/en/Goethe-Zertifikat_A2_Wortliste.pdf" target="_blank" rel="noreferrer">Goethe A2 list</a>{" · "}
+              <a href="https://www.goethe.de/pro/relaunch/prf/en/Goethe-Zertifikat_B1_Wortliste.pdf" target="_blank" rel="noreferrer">Goethe B1 list</a>
+            </details>
           </section>
         </div>
       )}

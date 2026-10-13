@@ -59,7 +59,14 @@ export type StoredCard = {
   history: "complete" | "partial" | "new";
   introduced: string;
 };
+export type Flashcard = {
+  german: string; english: string; kind: string; level: string; note: string;
+  plural?: string; example?: string; translation?: string; source?: string;
+  forms: { label: string; value: string }[];
+};
 export type Task = Exercise & {
+  flashcard?: Flashcard;
+  revealed?: boolean;
   block: Block;
   cardId?: string;
   cardVersion?: number;
@@ -81,6 +88,8 @@ export type Session = {
   complete: boolean;
   lastFeedback?: Feedback;
   blockOrder: Block[];
+  recallExtra?: boolean;
+  recallDeck?: "daily" | "a1" | "a2" | "b1" | "cases";
 };
 export type Feedback = {
   result: "correct" | "incorrect" | "pending" | "self-rated";

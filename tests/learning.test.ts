@@ -306,15 +306,30 @@ test("all two-week lessons have five phrases, valid answers, audio and no duplic
   }
 });
 
-test("a new phrase is introduced before recall and is not unaided evidence", async () => {
+test("new flashcard hides the answer until flip and preserves self-rating", async () => {
   const { db } = fixture();
-  const s = await start(db, ["recall"]);
-  const first = s.tasks[0];
-  assert.ok(first.context);
+  const session = await start(db, ["recall"]);
+  const first = session.tasks[0];
   assert.ok(first.supports.includes("initial teaching"));
-  const result = await answer(db, first.answer[0]);
-  assert.equal(result.feedback.independent, false);
-  assert.equal(Object.keys((await service.state(db, user)).cards).length, 1);
+  const before = (await service.home(db,user)).session!;
+  assert.equal(before.tasks[0].flashcard, undefined);
+  assert.equal(before.tasks[0].context, undefined);
+  await assert.rejects(service.attempt(db,user,{requestId:requestId(),sessionId:session.id,index:0,answer:"",rating:"good",flashcard:true}), /Flip the card/);
+  await service.support(db,user,{requestId:requestId(),sessionId:session.id,index:0,kind:"flip"});
+  const revealed = (await service.home(db,user)).session!;
+  assert.ok(revealed.tasks[0].flashcard?.english);
+  const payload={requestId:requestId(),sessionId:session.id,index:0,answer:"",rating:"good",flashcard:true};
+  await service.attempt(db,user,payload);
+  await service.attempt(db,user,payload);
+  const events=await service.events(db,user,"attempt");
+  assert.equal(events.length,1);
+  assert.equal(events[0].evidence!.result,"self-rated");
+  assert.equal(events[0].evidence!.source,"self-rating");
+  assert.equal(events[0].evidence!.independent,false);
+  assert.equal(events[0].evidence!.answer,"");
+  const card=(await service.state(db,user)).cards[first.cardId!];
+  assert.equal(card.due,review(undefined,"good",events[0].evidence!.time,studyDate()).due);
+  assert.equal((await service.progress(db,user)).skills.find(x=>x.skill==="recognition")!.checked,0);
 });
 test("repeated check prompts are not fresh evidence; no stable claim without a week", async () => {
   const { db } = fixture();
@@ -368,7 +383,8 @@ test("validated lesson publication supports new curriculum without deployment", 
   });
   assert.equal((await service.home(db, user)).lesson.id, "new-shop");
   const s = await start(db, ["recall"], "new-shop");
-  assert.equal(s.tasks[0].answer[0], lesson.words[0].german);
+  assert.equal(s.tasks[0].prompt, lesson.words[0].german);
+  assert.equal(s.tasks[0].answer[0], lesson.words[0].english);
   const invalid = structuredClone(lesson);
   invalid.version = 2;
   invalid.exercises[0].answer = [];
@@ -413,4 +429,44 @@ test("activity includes real attempts and legacy reviews, remains account isolat
   const other = (await service.progress(db, "other-user")).activity;
   assert.equal(other.activeDays, 0);
   assert.deepEqual(other.days, []);
+});
+
+test("flashcard reveal and position resume, including switching decks and extra practice", async()=>{
+  const {db}=fixture();
+  const startDeck=async(deck:string,extra=false)=>{
+    await service.start(db,user,{requestId:requestId(),blocks:["recall"],restart:true,deck,extra});
+    return (await service.state(db,user)).session!;
+  };
+  const a=await startDeck("a1");
+  await service.support(db,user,{requestId:requestId(),sessionId:a.id,index:0,kind:"flip"});
+  assert.equal((await startDeck("a1")).id,a.id);
+  assert.equal((await service.home(db,user)).session!.tasks[0].revealed,true);
+  await service.attempt(db,user,{requestId:requestId(),sessionId:a.id,index:0,answer:"",rating:"hard",flashcard:true});
+  await startDeck("cases");
+  const resumed=await startDeck("a1");
+  assert.equal(resumed.id,a.id);
+  assert.equal(resumed.index,1);
+  const extra=await startDeck("a1",true);
+  assert.notEqual(extra.id,a.id);
+  assert.ok(extra.tasks.every(t=>t.scheduled===false));
+  const other=(await service.home(db,"someone-else")).session;
+  assert.equal(other,null);
+});
+test("case flashcards, Again repair and original due dates stay honest",async()=>{
+  const {db}=fixture();
+  await service.start(db,user,{requestId:requestId(),blocks:["recall"],deck:"cases"});
+  const s=(await service.state(db,user)).session!;
+  assert.ok(s.tasks[0].prompt.includes("___"));
+  await service.support(db,user,{requestId:requestId(),sessionId:s.id,index:0,kind:"flip"});
+  const card=(await service.home(db,user)).session!.tasks[0].flashcard!;
+  assert.equal(card.kind,"case");
+  assert.ok(card.example?.includes("Mann"));
+  assert.ok(card.note);
+  await service.attempt(db,user,{requestId:requestId(),sessionId:s.id,index:0,answer:"",rating:"again",flashcard:true});
+  const state=await service.state(db,user);
+  assert.equal(state.session!.index,1);
+  assert.equal(state.session!.tasks[3].repair,true);
+  assert.equal(state.session!.tasks[3].supports.includes("flip"),false);
+  const progress=await service.progress(db,user);
+  assert.equal(progress.skills.reduce((n,s)=>n+s.independent,0),0);
 });

@@ -1113,3 +1113,34 @@ html, body { height: 100%; overflow: hidden; }
 }
 .modal .close { position: sticky; top: 0; float: right; margin: -24px -24px -20px 0; z-index: 3; background: var(--paper); border-radius: 50%; }
 @media (max-width: 640px) { .modal .close { margin: -18px -12px -20px 0; } }
+
+.recall-player { max-width: 720px; margin: 26px auto 0; }
+.flip-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; width: 100%; min-height: 260px; margin: 18px 0; padding: 32px; border-radius: 22px; background: var(--soft); border: 1px solid var(--line); text-align: center; transition: background .18s, transform .18s; }
+.flip-card.is-turned { background: #fff; border-color: var(--green); }
+.flip-card .eyebrow { margin: 0; }
+.card-word { font-size: clamp(28px, 4vw, 46px); line-height: 1.2; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.card-original { font-size: 18px; color: var(--muted); }
+.card-flip-hint { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.flash-ratings { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; margin-bottom: 14px; }
+.flash-ratings button { min-height: 70px; border: 1px solid var(--line); border-radius: 12px; padding: 10px 6px; background: var(--surface); }
+.flash-ratings button:not(:disabled):hover { border-color: var(--green); background: var(--soft); }
+.flash-ratings strong, .flash-ratings small { display: block; }
+.flash-ratings small { font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.3; }
+.card-details { margin: 22px 0; padding: 20px 0; border-top: 1px solid var(--line); }
+.card-details p { margin: 8px 0; }
+.card-details details { margin: 16px 0; }
+.card-details summary { cursor: pointer; font-weight: 600; }
+.card-forms { margin: 12px 0; }
+.card-forms > div { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.card-forms dt { color: var(--muted); font-size: 13px; }
+.card-forms dd { margin: 0; }
+.card-example { font-size: 20px; }
+.recall-save-note { padding: 18px 0; }
+.previous-card { margin: 20px 0; border-top: 1px solid var(--line); padding-top: 18px; }
+.previous-card summary { cursor: pointer; }
+.deck-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
+.deck-filters button { border: 1px solid var(--line); border-radius: 30px; padding: 10px 14px; }
+.deck-filters button[aria-pressed=true] { color: white; background: var(--green); }
+.deck-actions { display: grid; gap: 10px; margin-bottom: 20px; }
+.vocabulary-sources { margin: 20px 0; }
+@media (max-width:640px) { .flip-card { min-height: 220px; padding: 24px 16px; } .flash-ratings { gap: 5px; } .flash-ratings strong { font-size: 14px; } .flash-ratings small { font-size: 10px; } }
