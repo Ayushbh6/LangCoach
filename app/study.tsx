@@ -142,8 +142,13 @@ export default function Study({ userKey }: { userKey: string }) {
   const input = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null),
     audio = useRef<HTMLAudioElement | null>(null);
   const storage = `german-me:${userKey}:`;
+  const mainScroll = useRef<HTMLElement>(null);
+  const [handoffCopied, setHandoffCopied] = useState("");
   const session = home?.session,
     task = session?.tasks[session.index];
+  useEffect(() => {
+    mainScroll.current?.scrollTo({ top: 0 });
+  }, [view, focused, session?.index]);
   const refresh = useCallback(async () => {
     setHome(await api());
   }, []);
@@ -183,7 +188,7 @@ export default function Study({ userKey }: { userKey: string }) {
         dialog?.querySelectorAll<HTMLElement>(
           "button:not(:disabled),input,textarea,select,summary,a[href]",
         ) ?? [],
-      );
+      ).filter(element => element.getClientRects().length > 0);
     focusables()[0]?.focus();
     const handle = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -321,6 +326,7 @@ export default function Study({ userKey }: { userKey: string }) {
     });
   }
   async function loadBrief() {
+    setHandoffCopied("");
     const b = await api<Brief>("brief");
     setBrief(b);
   }
@@ -406,7 +412,7 @@ export default function Study({ userKey }: { userKey: string }) {
       <a className="skip" href="#main">
         Skip to learning
       </a>
-      <header className="header">
+      <header className="header" inert={!!(settings || brief || library)}>
         <button
           className="wordmark plain"
           onClick={() => {
@@ -451,6 +457,7 @@ export default function Study({ userKey }: { userKey: string }) {
           </button>
         )}
       </header>
+      <main id="main" ref={mainScroll} tabIndex={0} inert={!!(settings || brief || library)}>
       <div className="messages" aria-live="polite">
         {!online && (
           <p className="notice">
@@ -484,7 +491,6 @@ export default function Study({ userKey }: { userKey: string }) {
           </div>
         )}
       </div>
-      <main id="main">
         {focused && session ? (
           <section className="player" aria-label="Learning session">
             <div className="session-top">
@@ -1094,15 +1100,15 @@ export default function Study({ userKey }: { userKey: string }) {
                 )}
               </section>
             )}
-            <footer>
-              <span>Little by little. In your own words.</span>
-              <button className="text-button" onClick={() => run(loadBrief)}>
-                <MessageCircle size={16} /> Continue in ChatGPT
-              </button>
-            </footer>
           </>
         )}
       </main>
+      <footer className="app-footer" inert={!!(settings || brief || library)}>
+        <span>Little by little. In your own words.</span>
+        <button className="text-button" onClick={() => run(loadBrief)}>
+          <MessageCircle size={16} /> ChatGPT practice
+        </button>
+      </footer>
       {library && (
         <div className="modal-backdrop">
           <section
@@ -1318,33 +1324,40 @@ export default function Study({ userKey }: { userKey: string }) {
             >
               <X />
             </button>
-            <p className="eyebrow">
-              One learning record · version {brief.version}
-            </p>
-            <h2 id="brief-title">Take the conversation with you.</h2>
-            <p>{brief.lesson.mission}</p>
-            <ol className="handoff">
-              <li>
-                Connect the German Me plugin in ChatGPT, then ask it to load
-                your Learning Brief.
-              </li>
-              <li>Practise by voice or text in your German project.</li>
-              <li>
-                Finish in text and ask it to save a session summary. Check the
-                save confirmation.
-              </li>
-            </ol>
-            <details>
-              <summary>Copy-and-paste fallback</summary>
-              <p>
-                Paste this brief before voice. Afterwards, ask for the
-                session-summary JSON and import it below.
-              </p>
-              <button className="text-button" onClick={() => run(copyBrief)}>
-                <Copy size={16} /> Copy brief + summary template
+            <p className="eyebrow">Practise together</p>
+            <h2 id="brief-title">Your ChatGPT practice</h2>
+            <p>Open your German project in ChatGPT. Use the same chat for both steps.</p>
+            <div className="handoff-step">
+              <h3>1. Before practice</h3>
+              <p>Send this message in ChatGPT. Wait for it to load your record, then start voice or text practice.</p>
+              <blockquote>Use German Me to load my latest Learning Brief. Help me practise today’s situation one question at a time.</blockquote>
+              <button className="text-button" onClick={() => run(async () => {
+                await navigator.clipboard.writeText("Use German Me to load my latest Learning Brief. Help me practise today’s situation one question at a time.");
+                setHandoffCopied("Before-practice message copied. Paste it into ChatGPT.");
+              })}><Copy size={16} /> Copy starting message</button>
+            </div>
+            <div className="handoff-step">
+              <h3>2. After practice</h3>
+              <p>Finish voice, then send this message in the same chat. Wait for a successful save confirmation.</p>
+              <blockquote>Save this practice to German Me using the Learning Brief you loaded. Include my mistakes, hints and what to practise next. Confirm when saved.</blockquote>
+              <button className="text-button" onClick={() => run(async () => {
+                await navigator.clipboard.writeText("Save this practice to German Me using the Learning Brief you loaded. Include my mistakes, hints and what to practise next. Confirm when saved.");
+                setHandoffCopied("After-practice message copied. Paste it into the same ChatGPT chat.");
+              })}><Copy size={16} /> Copy saving message</button>
+            </div>
+            <p className="small muted">Then return to Progress to see your saved conversation and practice day.</p>
+            <p className="handoff-status" role="status">{handoffCopied}</p>
+            <details className="manual-handoff">
+              <summary>Plugin not working? Copy practice manually</summary>
+              <p><strong>Before practice:</strong> copy your learning notes below and paste them into your German ChatGPT chat.</p>
+              <button className="text-button" onClick={() => run(async () => {
+                await copyBrief();
+                setHandoffCopied("Learning notes copied. Paste them into ChatGPT before practice.");
+              })}>
+                <Copy size={16} /> Copy learning notes
               </button>
-              <pre>{brief.text}</pre>
-            </details>
+              <p><strong>After practice:</strong> ask ChatGPT: “Give me the completed session-summary JSON using the template I pasted. Include only practice you observed.”</p>
+              <p>Copy its reply into the box below and save. You don’t need to write or edit the JSON yourself.</p>
             <label>
               Import a session summary
               <textarea
@@ -1386,9 +1399,10 @@ export default function Study({ userKey }: { userKey: string }) {
               Save session summary <ArrowRight size={16} />
             </button>
             <p className="small muted">
-              Same session ID, same save: importing twice never duplicates
-              evidence.
+              Importing the same summary twice won’t duplicate your practice.
             </p>
+            </details>
+            {error && <p className="error" role="alert">{error}</p>}
           </section>
         </div>
       )}

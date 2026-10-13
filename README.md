@@ -59,3 +59,7 @@ See [ChatGPT connection](docs/CHATGPT_CONNECTION.md) and [daily preparation](doc
 ### Practice calendar and consistency
 
 Progress includes current/best streaks, all-time active days and Monday–Sunday activity, plus a selectable monthly practice calendar in Europe/Vienna time. Submitted attempts (including mistakes, hints and repairs), original flashcard reviews and saved conversation observations count. Opening sessions, profile reports and automatic lesson preparation do not. Conversation practice uses its occurrence date, not import date; retries cannot add duplicate activity. Today remains available to extend a streak from yesterday. These activity measures are separate from independent learning evidence; no practice durations or historical skills are inferred.
+
+### App navigation and conversation handoff
+
+Header and footer remain visible in a viewport-sized app shell; the centre scrolls independently. ChatGPT practice presents before/after messages and hides manual JSON import under the plugin fallback. The private hosted database remains authoritative; the Git-ignored learner profile is teaching context, not a synchronised full database backup.

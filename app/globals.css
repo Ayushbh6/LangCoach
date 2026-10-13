@@ -1084,3 +1084,32 @@ pre {
   .calendar-day { min-height: 44px; }
   .activity-tracker { margin-top: 32px; }
 }
+
+/* A viewport-sized app: only the centre and open dialogs scroll. */
+html, body { height: 100%; overflow: hidden; }
+.app { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.app > .header { flex-shrink: 0; background: var(--paper); z-index: 2; }
+.app > main { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 8px; scroll-padding-block: 20px; }
+.app > .app-footer { flex-shrink: 0; margin: 0; padding: 14px 0 max(14px, env(safe-area-inset-bottom)); min-height: 64px; background: var(--paper); }
+.app-footer .text-button { min-height: 44px; }
+.modal { overscroll-behavior: contain; }
+.handoff-step { padding: 22px 0; border-bottom: 1px solid var(--line); }
+.handoff-step h3 { font-size: 21px; margin-bottom: 8px; }
+.handoff-step blockquote { font: inherit; margin: 14px 0; padding: 16px 20px; letter-spacing: 0; background: var(--soft); border-radius: 10px; }
+.handoff-step .text-button, .manual-handoff .text-button { min-height: 44px; }
+.handoff-status { color: var(--green); font-size: 14px; }
+.handoff-status:empty { display: none; }
+.manual-handoff > .primary { margin-top: 16px; }
+.manual-handoff > .small { margin-top: 12px; }
+@media (max-width: 640px) {
+  .app > .header { height: 64px; margin-bottom: 43px; }
+  .app > .header nav { top: 64px; background: var(--paper); }
+  .app.focus-mode > .header { margin-bottom: 0; }
+  .app > main { padding-right: 0; scrollbar-gutter: auto; }
+  .app > .app-footer { min-height: 60px; padding-top: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .app-footer > span { display: none; }
+  .app-footer { display: flex; justify-content: center; }
+  .app-footer > .text-button { margin-top: 0; }
+}
+.modal .close { position: sticky; top: 0; float: right; margin: -24px -24px -20px 0; z-index: 3; background: var(--paper); border-radius: 50%; }
+@media (max-width: 640px) { .modal .close { margin: -18px -12px -20px 0; } }
