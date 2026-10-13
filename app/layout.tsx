@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "German Me · A little, often",
-  description: "Your private Goethe A2–B1 practice: 600 vocabulary cards, cases, spaced recall, and hands-free repetition.",
+  description: "Everyday German through scenarios, repeated recall and one private learning record.",
   other: {
     "codex-preview": "development",
   },

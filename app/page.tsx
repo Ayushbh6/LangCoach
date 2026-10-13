@@ -1,7 +1,7 @@
-import Study from './study';
-import { requireChatGPTUser } from './chatgpt-auth';
-export const dynamic = 'force-dynamic';
+import Study from "./study";
+import { requireChatGPTUser } from "./chatgpt-auth";
+export const dynamic = "force-dynamic";
 export default async function Home() {
- await requireChatGPTUser('/');
- return <Study />;
+  const user = await requireChatGPTUser("/");
+  return <Study userKey={user.userId} />;
 }

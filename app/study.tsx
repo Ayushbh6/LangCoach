@@ -1,148 +1,1368 @@
-'use client';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftRight, BookOpen, Check, ChevronRight, CircleHelp, Layers, LoaderCircle, Search, Sparkles, Volume2, X } from 'lucide-react';
-import { vocabulary, topics, levels, matchesLevel, type Card, type Level } from '../data/vocabulary';
-import { cases, articleTable } from '../data/cases';
-import { isLearning, intervalLabel, type Progress, type Rating } from '../lib/scheduler';
-import Flashcard from './flashcard';
-import AutoRepeat from './auto-repeat';
-import StudySelect from './study-select';
-type Review = {card_id:string;rating:Rating;reviewed_at:number};
-type View = 'words'|'cases'|'library';
-const ratings: Rating[] = ['again','hard','good','easy'];
-const dayKey = (n:number) => new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Vienna',year:'numeric',month:'2-digit',day:'2-digit'}).format(n);
-
-export default function Study() {
- const [view,setView]=useState<View>('words'),[topic,setTopic]=useState('All topics'),[direction,setDirection]=useState<'de'|'en'>('de');
- const [level,setLevel]=useState<Level>('mixed');
- const [progress,setProgress]=useState<Record<string,Progress>>({}),[reviews,setReviews]=useState<Review[]>([]);
- const [ready,setReady]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false);
- const [revealedKey,setRevealedKey]=useState(''),[activeKey,setActiveKey]=useState('');
- const [mode,setMode]=useState<'rated'|'auto'>('rated');
- const [newBudget,setNewBudget]=useState(20),[sessionCount,setSessionCount]=useState(0),[now,setNow]=useState(Date.now());
- const [query,setQuery]=useState(''),[guide,setGuide]=useState(false),[soundMessage,setSoundMessage]=useState('');
- const lock=useRef(false),pending=useRef<{cardId:string;rating:Rating;requestId:string;updatedAt:number}|null>(null);
- const load=useCallback(async()=>{
-  setReady(false);setError('');
-  try { const r=await fetch('/api/progress',{cache:'no-store'}); const data=await r.json() as {error?:string;progress:Progress[];reviews:Review[]}; if(!r.ok) throw Error(data.error); setProgress(Object.fromEntries(data.progress.map((p:Progress)=>[p.cardId,p])));setReviews(data.reviews);setReady(true); }
-  catch(e) {setError(e instanceof Error?e.message:'Could not load your reviews.');}
- },[]);
- useEffect(()=>{void load();const timer=setInterval(()=>setNow(Date.now()),15000);return()=>clearInterval(timer);},[load]);
- useEffect(()=>{try{const saved=localStorage.getItem('german-me:level');if(levels.some(l=>l.value===saved))setLevel(saved as Level);else if(saved==='hard')setLevel('b1');else if(saved==='easy'||saved==='medium')setLevel('a2');}catch{}},[]);
- function changeLevel(value:Level){if(lock.current||pending.current)return;setLevel(value);setActiveKey('');setFlipped(false);setSoundMessage('');setSessionCount(0);setNewBudget(20);try{localStorage.setItem('german-me:level',value);}catch{}}
- const pool=useMemo(()=>view==='cases'?cases:vocabulary.filter(c=>(topic==='All topics'||c.topic===topic)&&matchesLevel(c,level)),[view,topic,level]);
- const actualDirection=view==='cases'?'de':direction;
- const keyOf=useCallback((c:Card)=>`${c.id}:${actualDirection}`,[actualDirection]);
- const dueCards=useMemo(()=>pool.filter(c=>progress[keyOf(c)]?.due<=now).sort((a,b)=>progress[keyOf(a)].due-progress[keyOf(b)].due),[pool,progress,keyOf,now]);
- const newCards=useMemo(()=>pool.filter(c=>!progress[keyOf(c)]),[pool,progress,keyOf]);
- const earlyLearning=pool.filter(c=>isLearning(progress[keyOf(c)])&&progress[keyOf(c)].due>now&&progress[keyOf(c)].due<=now+20*60000).sort((a,b)=>progress[keyOf(a)].due-progress[keyOf(b)].due);
- const candidate=dueCards[0]??(newBudget>0?newCards[0]:undefined)??earlyLearning[0];
- const current=ready?(pool.find(c=>keyOf(c)===activeKey)??candidate):undefined,currentKey=current?keyOf(current):'';
- const flipped=!!currentKey&&revealedKey===currentKey;
- const setFlipped=(value:boolean)=>setRevealedKey(value?currentKey:'');
- useEffect(()=>{if(currentKey!==activeKey)setActiveKey(currentKey);},[currentKey,activeKey]);
- const previous=currentKey?progress[currentKey]:undefined;
- const nextDue=pool.map(c=>progress[keyOf(c)]?.due).filter((d):d is number=>!!d&&d>now).sort((a,b)=>a-b)[0];
- const todays=reviews.filter(r=>dayKey(r.reviewed_at)===dayKey(now));
- const activeWordIds=new Set(vocabulary.map(c=>c.id));
- const reviewedWords=new Set(Object.values(progress).map(p=>p.cardId.split(':')[0]).filter(id=>activeWordIds.has(id))).size;
- const mastered=Object.values(progress).filter(p=>p.cardId.endsWith(`:${actualDirection}`)&&p.interval>=7&&activeWordIds.has(p.cardId.split(':')[0])).length;
- const consecutive=useMemo(()=>{
-  const dates=new Set(reviews.map(r=>dayKey(r.reviewed_at))); let count=0, n=now;
-  if(!dates.has(dayKey(n))) n-=86400000;
-  while(dates.has(dayKey(n))&&count<366){count++;n-=86400000;}return count;
- },[reviews,now]);
- useEffect(()=>{setSoundMessage('');},[currentKey]);
- function switchView(v:View) {if(lock.current||pending.current)return;setView(v);setActiveKey('');setTopic('All topics');setFlipped(false);setSessionCount(0);setNewBudget(20);}
- const rate=useCallback(async(rating:Rating)=>{
-  if(!current||!flipped||lock.current||!ready)return;
-  if(pending.current && (pending.current.cardId!==currentKey||pending.current.rating!==rating))return;
-  lock.current=true;setBusy(true);setError('');
-  const payload=pending.current??{cardId:currentKey,rating,requestId:crypto.randomUUID(),updatedAt:previous?.updatedAt??0};
-  pending.current=payload;
-  try {
-   const r=await fetch('/api/progress',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-   const data=await r.json() as {error?:string;progress:Progress;review?:Review};if(!r.ok) { if(r.status===409){pending.current=null;await load();}throw Error(data.error); }
-   setRevealedKey('');setActiveKey('');
-   setProgress(p=>({...p,[currentKey]:data.progress}));
-   setReviews(rs=>data.review?[data.review,...rs]:rs);
-   if(!previous)setNewBudget(n=>Math.max(0,n-1));
-   setSessionCount(n=>n+1);setNow(Date.now());pending.current=null;
-  }catch(e){setError(e instanceof Error?e.message:'Your review could not be saved.');}
-  finally{setBusy(false);lock.current=false;}
- },[current,flipped,ready,currentKey,previous,load]);
- useEffect(()=>{
-  const onKey=(e:KeyboardEvent)=>{
-   if(e.defaultPrevented||(e.target instanceof HTMLElement&&e.target.closest('[role="listbox"],[role="combobox"]'))||mode==='auto'||guide||view==='library'||e.target instanceof HTMLInputElement||e.target instanceof HTMLSelectElement||e.target instanceof HTMLButtonElement)return;
-   if(e.code==='Space'){e.preventDefault();if(ready&&current&&!busy)setFlipped(!flipped);}
-   if(['1','2','3','4'].includes(e.key)&&flipped){e.preventDefault();void rate(ratings[Number(e.key)-1]);}
-  };window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);
- },[mode,guide,view,ready,current,busy,flipped,rate]);
- useEffect(()=>{
-  if(guide){const onKey=(e:KeyboardEvent)=>{if(e.key==='Escape')setGuide(false);};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);}
- },[guide]);
- function speak(c:Card) {
-  if(!('speechSynthesis' in window)){setSoundMessage('Pronunciation is unavailable in this browser.');return;}
-  speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(c.kind==='case'?c.german.replace('___',c.english).replace(/\s*\(my\)/,''):c.german);
-  utterance.lang='de-DE';utterance.rate=.83;const voice=speechSynthesis.getVoices().find(v=>v.lang.startsWith('de'));if(voice)utterance.voice=voice;
-  utterance.onerror=()=>setSoundMessage('Pronunciation could not play. Try again.');speechSynthesis.speak(utterance);
- }
- const filtered=vocabulary.filter(c=>(topic==='All topics'||c.topic===topic)&&matchesLevel(c,level)&&`${c.german} ${c.english}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
- useEffect(()=>{
-  const context=(document as Document & {modelContext?:{registerTool:(tool:unknown,options:unknown)=>unknown}}).modelContext;
-  if(!context?.registerTool)return;
-  const lifecycle=new AbortController();
-  try {Promise.resolve(context.registerTool({name:'open_german_deck',description:'Open the words or cases flashcard deck. Does not submit or rate a review.',inputSchema:{type:'object',properties:{deck:{type:'string',enum:['words','cases']}},required:['deck'],additionalProperties:false},annotations:{readOnlyHint:false},execute:(input:unknown)=>{const d=(input as {deck?:string})?.deck;if(d!=='words'&&d!=='cases')throw Error('Choose words or cases.');if(lock.current||pending.current)throw Error('Finish saving your review first.');switchView(d);return{deck:d};}},{signal:lifecycle.signal})).catch(()=>{});}catch{}
-  return()=>lifecycle.abort();
- },[]);
- const levelSelector=<StudySelect label="Level" value={level} disabled={busy||!!pending.current} onChange={v=>changeLevel(v as Level)} options={levels.map(l=>({value:l.value,label:l.label,description:l.value==='a2'?'Everyday words & foundations':l.value==='b1'?'Ideas, opinions & longer sentences':'Practise both levels together'}))}/>;
- const levelHint=levels.find(l=>l.value===level)!.hint;
- return <div className="app-shell">
-  <header className="topbar">
-   <a className="brand" href="/" aria-label="German Me home"><span className="brand-mark">ü</span><span>german<span className="brand-light">me</span><span className="brand-dot">.</span></span></a>
-   <nav aria-label="Learning sections">{(['words','cases','library'] as View[]).map(v=><button key={v} className={view===v?'nav-active':''} onClick={()=>switchView(v)} disabled={busy||!!pending.current}>{v==='words'?<Layers size={18}/>:v==='cases'?<Sparkles size={18}/>:<BookOpen size={18}/>}<span>{v==='words'?'Flashcards':v==='cases'?'Cases':'Word library'}</span></button>)}</nav>
-   <span className="private-label">Your private space <span className="avatar">me</span></span>
-  </header>
-  <main>
-   <div className="heading-row"><div><p className="eyebrow">DEUTSCH / GOETHE A2–B1</p><h1>{view==='words'?'One word at a time.':view==='cases'?'Give words their place.':'Your German, word by word.'}</h1><p className="subheading">{view==='words'?'Recall first. Reveal second. Make it stick.':view==='cases'?'Practise the little endings that make a big difference.':`${vocabulary.length} words for Goethe A2–B1 preparation.`}</p></div><div className="streak"><span className="streak-icon">✦</span><span><strong>{consecutive}</strong> day{consecutive===1?'':'s'}<small>learning streak</small></span></div></div>
-   {view==='library'?<section className="library-section">
-    <div className="library-tools">{levelSelector}<label className="search-box"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a German or English word" aria-label="Search vocabulary"/></label><StudySelect label="Topic" value={topic} onChange={setTopic} options={['All topics',...topics].map(t=>({value:t,label:t}))}/></div>
-    <p className="level-hint">{levelHint}</p><div className="library-count">{filtered.length} words <span>Articles, forms, and examples</span></div>
-    <div className="word-list">{filtered.map(c=><div className="word-row" key={c.id}><div><span className={`gender ${c.german.startsWith('der ')?'masc':c.german.startsWith('die ')?'fem':'neut'}`} lang="de">{c.german}</span><small>{c.plural?`Plural: ${c.plural}`:c.note}</small></div><span>{c.english}</span><span className="word-topic">{c.topic}<small className="difficulty-badge">{levels.find(l=>l.value===c.cefr)?.label}</small></span><button className="icon-button" aria-label={`Hear ${c.german}`} onClick={()=>speak(c)}><Volume2 size={18}/></button></div>)}</div>
-    {!filtered.length&&<div className="empty-library">No matching words. Try another spelling or topic.</div>}
-   </section>:<div className="workspace">
-    <section className="study-area" aria-label="Flashcard study">
-     <div className="deck-bar"><div className="deck-filters">{view==='words'&&levelSelector}<StudySelect label={view==='cases'?'Practice deck':'Your deck'} value={topic} onChange={value=>{setTopic(value);setActiveKey('');setFlipped(false);setNewBudget(20);}} disabled={view==='cases'||busy||!!pending.current} options={view==='cases'?[{value:'All topics',label:'All cases'}]:['All topics',...topics].map(t=>({value:t,label:t}))}/></div>{view==='words'?<button className="direction-button" disabled={busy||!!pending.current} onClick={()=>{setDirection(d=>d==='de'?'en':'de');setActiveKey('');setFlipped(false);setNewBudget(20);}}><ArrowLeftRight size={16}/>{direction==='de'?'German → English':'English → German'}</button>:<button className="direction-button" onClick={()=>setGuide(true)}><CircleHelp size={16}/>Case cheat sheet</button>}</div>
-     {view==='words'&&<p className="level-hint">{levelHint}</p>}
-     <div className="study-modes" role="group" aria-label="Study mode"><button aria-pressed={mode==='rated'} disabled={busy||!!pending.current} onClick={()=>setMode('rated')}>Rated recall</button><button aria-pressed={mode==='auto'} disabled={busy||!!pending.current} onClick={()=>setMode('auto')}>Auto repeat</button></div>
-     {mode==='auto'?<AutoRepeat key={`${view}:${level}:${topic}:${direction}`} pool={pool} direction={actualDirection} progress={progress} reviews={todays} ready={ready} pausedExternally={guide} onSpeak={speak}/>:<>
-     <div className="queue-meta"><span><i className="dot blue"/>{Math.min(newCards.length,newBudget)} new</span><span><i className="dot orange"/>{dueCards.length} due</span><span className="session-counter">{sessionCount} reviewed this session</span></div>
-     {!ready?<div className="card-status"><LoaderCircle className={!error?'spin':''} size={30}/><h2>{error?'Reviews unavailable':'Getting your cards ready…'}</h2>{error&&<button className="primary" onClick={()=>void load()}>Try again</button>}</div>:current?<>
-      <Flashcard key={currentKey} current={current} direction={actualDirection} flipped={flipped} onFlip={()=>setFlipped(!flipped)} disabled={busy} review={!!previous}/>
-      <div className="card-actions"><span>{current.kind==='case'?'Read the whole sentence aloud.':current.kind==='noun'?'Learn the article with the word.':'Recall the meaning and the word form.'}</span><button className="listen-button" onClick={()=>speak(current)} disabled={current.kind==='case'&&!flipped}><Volume2 size={17}/>Hear it</button></div>
-      <div className={`recall-area ${flipped?'revealed':''}`}>{flipped?<div className="rating-grid">{ratings.map((rating,i)=><button key={rating} className={`rating rating-${rating}`} onClick={()=>void rate(rating)} disabled={busy||!!pending.current&&pending.current.rating!==rating}><span className="rating-name">{busy&&pending.current?.rating===rating?<LoaderCircle size={16} className="spin"/>:rating[0].toUpperCase()+rating.slice(1)}<kbd>{i+1}</kbd></span><small>{intervalLabel(previous,rating,now)}</small></button>)}</div>:<button className="reveal-button" disabled={busy} onClick={()=>setFlipped(true)}>Reveal answer<span>space</span></button>}</div>
-     </>:<div className="card-status finished"><span className="finish-star">✦</span><p className="eyebrow">GUT GEMACHT</p><h2>{!pool.length?'No words in this selection.':sessionCount?'A little more German, learned.':'You’re all caught up.'}</h2><p>{!pool.length?'Choose another level or topic.':nextDue?`Next review ${nextDue-now<3600000?`in ${Math.max(1,Math.ceil((nextDue-now)/60000))} min`:new Date(nextDue).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}.`:'Your next words are waiting when you are.'}</p>{newCards.length>0&&<button className="primary" onClick={()=>{setNewBudget(20);setSessionCount(0);}}>Learn {Math.min(20,newCards.length)} more words</button>}</div>}
-     </>}
-     {error&&<div className="error-message" role="alert">{error}{ready&&pending.current&&<button onClick={()=>void rate(pending.current!.rating)}>Retry save</button>}</div>}
-     {soundMessage&&<p className="sound-message" role="status">{soundMessage}</p>}
-     {mode==='rated'&&<p className="keyboard-hint"><kbd>space</kbd> reveal <span>·</span> <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> rate your recall</p>}
-    </section>
-    <aside className="inspector">
-     <div className="progress-header"><p className="eyebrow">YOUR MOMENTUM</p><span className="sparkle">✧</span></div><h2>A little, often.</h2><p className="aside-intro">Small sessions. Stronger recall.</p>
-     <div className="daily-progress"><div className="progress-ring" style={{'--progress':`${Math.min(todays.length/20,1)*100}%`} as React.CSSProperties}><div><strong>{todays.length}</strong><span>/ 20</span></div></div><div><strong>Today’s rated reviews</strong><p>{todays.length>=20?'Daily goal reached. Nicely done.':`${20-todays.length} to your daily goal`}</p></div></div>
-     <div className="progress-line"><span>Words reviewed</span><strong>{reviewedWords}<small> / {vocabulary.length}</small></strong></div><div className="progress-line"><span>7+ day intervals</span><strong>{mastered}</strong></div>
-     <div className="recall-note"><span className="eyebrow">A NOTE ON RECALL</span><p>{view==='cases'?'Ask who does it, what receives the action, and to whom. That’s the start of cases.':'A blank moment is part of learning. Choose Again, and the word will return in a minute.'}</p></div>
-     <div className="article-guide"><div><h3>{view==='cases'?'Three useful questions':'Tiny word. Big difference.'}</h3><button aria-label="Open grammar guide" onClick={()=>setGuide(true)}><CircleHelp size={18}/></button></div>{view==='cases'?<><p><b>Wer?</b> Who? <span>Nominative</span></p><p><b>Wen / was?</b> Whom / what? <span>Accusative</span></p><p><b>Wem?</b> To whom? <span>Dative</span></p></>:<><p><b className="masc">der</b> masculine</p><p><b className="fem">die</b> feminine <span>+ all plurals</span></p><p><b className="neut">das</b> neuter</p></>}</div>
-     <div className="storage-note"><Check size={14}/>{ready?'Progress saved to your account':'Connecting your progress'}</div>
-    </aside>
-   </div>}
-   <footer><span>Built for your next word.</span><button onClick={()=>setGuide(true)}>How recall works <CircleHelp size={14}/></button></footer>
-  </main>
-  {guide&&<Guide onClose={()=>setGuide(false)}/>}
- </div>;
+"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ArrowRight,
+  ArrowLeft,
+  Check,
+  ChevronUp,
+  ChevronDown,
+  Headphones,
+  VolumeX,
+  Settings2,
+  X,
+  BookOpen,
+  RotateCcw,
+  MessageCircle,
+  Copy,
+  Download,
+  Pause,
+  Flag,
+  WifiOff,
+} from "lucide-react";
+import { curriculum } from "../data/curriculum";
+import type {
+  Session,
+  Settings,
+  Feedback,
+  Task,
+  Block,
+} from "../lib/learning/types";
+type Home = {
+  version: number;
+  updatedAt: number;
+  settings: Settings;
+  priorities: string[];
+  lesson: Session["lesson"];
+  session: Session | null;
+  due: number;
+  bank: { id: string; title: string; germanTitle: string; outcome: string }[];
+};
+type Progress = {
+  skills: {
+    skill: string;
+    attempts: number;
+    checked: number;
+    independent: number;
+    pending: number;
+    delayed: number;
+  }[];
+  targets: {
+    target: string;
+    status: string;
+    count: number;
+    independent: number;
+  }[];
+  observations: {
+    summary: string;
+    occurredAt: string;
+    nextTargets: string[];
+    source: string;
+  }[];
+  cards: { enrolled: number; due: number; partialHistory: number };
+  recent: {
+    id: string;
+    answer: string;
+    result: string;
+    independent: boolean;
+    target: string;
+    flagged: boolean;
+    time: number;
+  }[];
+};
+type Brief = {
+  text: string;
+  version: number;
+  sessionId: string;
+  summaryTemplate: Record<string, unknown>;
+  lesson: { mission: string };
+};
+const labels: Record<Block, string> = {
+  recall: "Recall",
+  scenario: "Scenario",
+  reading: "Reading",
+  listening: "Listening",
+  writing: "Writing",
+  later: "Later recall",
+  conversation: "Conversation",
+};
+const uid = () => crypto.randomUUID();
+async function api<T = Home>(view = ""): Promise<T> {
+  const r = await fetch(`/api/learning${view ? `?view=${view}` : ""}`, {
+    cache: "no-store",
+  });
+  const data = (await r.json()) as T & { error?: string };
+  if (!r.ok) throw new Error(data.error);
+  return data;
 }
-function Guide({onClose}:{onClose:()=>void}) {
- const dialog=useRef<HTMLDialogElement>(null);
- useEffect(()=>{dialog.current?.showModal();return()=>dialog.current?.close();},[]);
- return <dialog ref={dialog} className="guide-dialog" onCancel={onClose} onClick={e=>{if(e.target===dialog.current)onClose();}}><div className="guide-title"><div><p className="eyebrow">KEEP THIS HANDY</p><h2>Cases & recall</h2></div><button className="icon-button" onClick={onClose} autoFocus aria-label="Close guide"><X/></button></div><h3>The article changes with the job.</h3><p>The subject uses nominative. A direct object usually uses accusative. Recipients and verbs such as helfen use dative. Genitive shows possession.</p><div className="table-scroll"><table><thead><tr>{['Case','Masculine','Feminine','Neuter','Plural'].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{articleTable.map(r=><tr key={r[0]}>{r.map((v,i)=><td key={i}>{v}</td>)}</tr>)}</tbody></table></div><p className="guide-extra">Plural indefinite articles have no ein form. Masculine and neuter genitive nouns usually add -(e)s.</p><h3>Prepositions give you a clue.</h3><p><b>Accusative:</b> durch, für, gegen, ohne, um.<br/><b>Dative:</b> aus, bei, mit, nach, seit, von, zu.<br/><b>Two-way:</b> an, auf, hinter, in, neben, über, unter, vor, zwischen. Location (wo?) uses dative; destination (wohin?) uses accusative. Movement alone doesn’t determine the case.</p><h3>Remember, then rate honestly.</h3><p><b>Again</b> returns in 1 minute. <b>Hard</b> returns in 6 minutes for a new card. <b>Good</b> on a new card returns in 10 minutes, then tomorrow after the next successful review. Later intervals grow. <b>Easy</b> starts at 4 days. Successful reviews gradually lengthen the interval.</p><p>German → English and English → German have separate schedules. Due cards come first, followed by up to 20 new cards per session. When the queue is otherwise empty, learning cards can appear up to 20 minutes early so you can finish the session. You can add another 20 when you finish.</p><h3>Hands-free repetition.</h3><p>Auto repeat shows a question, reveals its answer, and moves on automatically. It repeats a fixed set of up to 20 cards through three rounds. Due cards and cards you rated today are selected first, then new cards from your level and topic. Pause at any time; changing tabs pauses the timer. This is practice, so it does not submit ratings or alter your saved review intervals.</p><p className="guide-extra">Rated recall uses Anki-style learning steps with a simple SM-2-inspired review scheduler, rather than Anki’s exact FSRS algorithm. A2 core and B1 expansion are study groupings checked against Goethe vocabulary references. The A2 deck includes essential foundations. This is an independent, selected vocabulary bank, not the complete Goethe exam syllabus. Your level filter is remembered on this device. Pronunciation uses your browser’s German voice, when available.</p><div className="source-links"><a href="https://www.goethe.de/en/m/spr/prf/ueb/pa2.html" target="_blank" rel="noreferrer">Goethe A2 resources</a><a href="https://www.goethe.de/de/spr/prf/ueb/pb1.html" target="_blank" rel="noreferrer">Goethe B1 resources</a><a href="https://docs.ankiweb.net/deck-options.html#auto-advance" target="_blank" rel="noreferrer">Anki learning steps & Auto Advance</a></div></dialog>;
+async function post(data: unknown) {
+  const r = await fetch("/api/learning", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  const result = (await r.json()) as {
+    error: string;
+    session: Session;
+    feedback: Feedback;
+    text: string;
+    historical: boolean;
+  };
+  if (!r.ok) {
+    const e = new Error(result.error) as Error & { status: number };
+    e.status = r.status;
+    throw e;
+  }
+  return result;
+}
+export default function Study({ userKey }: { userKey: string }) {
+  const [home, setHome] = useState<Home | null>(null),
+    [view, setView] = useState<"today" | "practice" | "progress">("today"),
+    [focused, setFocused] = useState(false),
+    [settings, setSettings] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
+    [answer, setAnswer] = useState(""),
+    [feedback, setFeedback] = useState<Feedback | null>(null),
+    [support, setSupport] = useState(""),
+    [report, setReport] = useState<Progress | null>(null),
+    [brief, setBrief] = useState<Brief | null>(null),
+    [importText, setImportText] = useState(""),
+    [pending, setPending] = useState<Record<string, unknown> | null>(null),
+    [online, setOnline] = useState(true),
+    [lastAttempt, setLastAttempt] = useState(""),
+    [search, setSearch] = useState(""),
+    [library, setLibrary] = useState<
+      { id: string; german: string; english: string }[] | null
+    >(null);
+  const input = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null),
+    audio = useRef<HTMLAudioElement | null>(null);
+  const storage = `german-me:${userKey}:`;
+  const session = home?.session,
+    task = session?.tasks[session.index];
+  const refresh = useCallback(async () => {
+    setHome(await api());
+  }, []);
+  useEffect(() => {
+    refresh().catch((e) => setError(e.message));
+    const on = () => setOnline(navigator.onLine);
+    on();
+    window.addEventListener("online", on);
+    window.addEventListener("offline", on);
+    try {
+      const value = localStorage.getItem(storage + "pending");
+      if (value) setPending(JSON.parse(value));
+    } catch {}
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", on);
+    };
+  }, [refresh, storage]);
+  useEffect(() => {
+    if (!session || !task) return;
+    try {
+      setAnswer(
+        localStorage.getItem(
+          `${storage}draft:${session.id}:${session.index}`,
+        ) ?? "",
+      );
+    } catch {}
+    setSupport("");
+    audio.current?.pause();
+  }, [session?.id, session?.index, storage]);
+  useEffect(() => {
+    if (!settings && !brief && !library) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = document.querySelector<HTMLElement>("[role=dialog]");
+    const focusables = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          "button:not(:disabled),input,textarea,select,summary,a[href]",
+        ) ?? [],
+      );
+    focusables()[0]?.focus();
+    const handle = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSettings(false);
+        setBrief(null);
+        setLibrary(null);
+      }
+      if (e.key === "Tab") {
+        const items = focusables();
+        const first = items[0],
+          last = items.at(-1);
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", handle);
+    return () => {
+      document.removeEventListener("keydown", handle);
+      previous?.focus();
+    };
+  }, [settings, !!brief, !!library]);
+  async function run(fn: () => Promise<void>) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await fn();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function begin(
+    blocks?: Block[],
+    lessonId?: string,
+    extra = false,
+    options: { weekly?: boolean; cardId?: string } = {},
+  ) {
+    await run(async () => {
+      const continuing =
+        !!home?.session && !home.session.complete && !blocks && !lessonId;
+      const res = await post({
+        action: "start",
+        requestId: uid(),
+        ...(blocks ? { blocks, restart: true } : {}),
+        ...(lessonId ? { lessonId, restart: true } : {}),
+        extra,
+        ...options,
+      });
+      await refresh();
+      setFeedback(null);
+      setFocused(true);
+      setSupport("");
+      if (continuing) setNotice("Right where you left off.");
+      if (res.session.complete) {
+        setFocused(false);
+        await loadBrief();
+      }
+    });
+  }
+  async function submit(rating?: string, retry?: Record<string, unknown>) {
+    if (!session || !task) return;
+    const payload = retry ?? {
+      action: "attempt",
+      requestId: uid(),
+      sessionId: session.id,
+      index: session.index,
+      answer,
+      rating,
+    };
+    await run(async () => {
+      try {
+        localStorage.setItem(storage + "pending", JSON.stringify(payload));
+      } catch {}
+      setPending(payload);
+      const res = await post(payload);
+      setHome((h) => (h ? { ...h, session: res.session } : h));
+      setFeedback(res.feedback);
+      setLastAttempt(String(payload.requestId));
+      setPending(null);
+      try {
+        localStorage.removeItem(storage + "pending");
+        localStorage.removeItem(
+          `${storage}draft:${payload.sessionId}:${payload.index}`,
+        );
+      } catch {}
+      setAnswer("");
+      setSupport("");
+    });
+  }
+  async function retryPending() {
+    if (!pending) return;
+    await run(async () => {
+      const res = await post(pending);
+      setFeedback(res.feedback);
+      setLastAttempt(String(pending.requestId));
+      setPending(null);
+      localStorage.removeItem(storage + "pending");
+      await refresh();
+      setFocused(true);
+    });
+  }
+  async function help(
+    kind: "hint" | "answer" | "transcript" | "example" | "audio",
+  ) {
+    if (!session || !task) return;
+    await run(async () => {
+      const res = await post({
+        action: "support",
+        requestId: uid(),
+        sessionId: session.id,
+        index: session.index,
+        kind,
+      });
+      setHome((h) => (h ? { ...h, session: res.session } : h));
+      if (kind !== "audio") setSupport(res.text);
+    });
+  }
+  async function savePrefs(value: Settings) {
+    await run(async () => {
+      await post({ action: "settings", requestId: uid(), settings: value });
+      await refresh();
+      setNotice(
+        "Preferences saved. Your current session keeps its original plan.",
+      );
+    });
+  }
+  async function loadBrief() {
+    const b = await api<Brief>("brief");
+    setBrief(b);
+  }
+  async function copyBrief() {
+    if (!brief) return;
+    await navigator.clipboard.writeText(
+      brief.text +
+        "\n\nSave the session using this JSON structure:\n" +
+        JSON.stringify(brief.summaryTemplate, null, 2),
+    );
+    setNotice(
+      "Learning Brief copied. Paste it into your German ChatGPT project.",
+    );
+  }
+  async function changeView(v: typeof view) {
+    setView(v);
+    setError("");
+    if (v === "progress")
+      await run(async () => setReport(await api<Progress>("progress")));
+  }
+  function draft(value: string) {
+    setAnswer(value);
+    if (session)
+      try {
+        localStorage.setItem(
+          `${storage}draft:${session.id}:${session.index}`,
+          value,
+        );
+      } catch {}
+  }
+  function next() {
+    setFeedback(null);
+    setSupport("");
+    if (session?.complete) {
+      setFocused(false);
+      refresh();
+      setNotice("Session saved. Come back later for a short recall.");
+    } else setTimeout(() => input.current?.focus(), 50);
+  }
+  async function flagAnswer() {
+    await run(async () => {
+      await post({
+        action: "flag",
+        requestId: uid(),
+        attemptId: lastAttempt,
+        reason: "Learner requested review of this correction.",
+      });
+      setNotice(
+        "Flagged for review. This answer is excluded from progress claims.",
+      );
+    });
+  }
+  if (!home)
+    return (
+      <main className="loading">
+        <span className="wordmark">
+          german me<span>↗</span>
+        </span>
+        <p role="status">{error || "Opening your learning space…"}</p>
+        {error && <button onClick={() => run(refresh)}>Try again</button>}
+      </main>
+    );
+  const pref = home.settings;
+  return (
+    <div className={focused ? "app focus-mode" : "app"}>
+      <a className="skip" href="#main">
+        Skip to learning
+      </a>
+      <header className="header">
+        <button
+          className="wordmark plain"
+          onClick={() => {
+            setFocused(false);
+            setView("today");
+          }}
+        >
+          german me<span>↗</span>
+        </button>
+        {!focused ? (
+          <>
+            <nav aria-label="Main navigation">
+              {(["today", "practice", "progress"] as const).map((v) => (
+                <button
+                  key={v}
+                  aria-current={view === v ? "page" : undefined}
+                  className={view === v ? "active" : ""}
+                  onClick={() => changeView(v)}
+                >
+                  {v[0].toUpperCase() + v.slice(1)}
+                </button>
+              ))}
+            </nav>
+            <button
+              className="icon-button"
+              aria-label="Settings"
+              onClick={() => setSettings(true)}
+            >
+              <Settings2 size={20} />
+            </button>
+          </>
+        ) : (
+          <button
+            className="text-button"
+            onClick={() => {
+              audio.current?.pause();
+              setFocused(false);
+            }}
+          >
+            <Pause size={16} /> Save & leave
+          </button>
+        )}
+      </header>
+      <div className="messages" aria-live="polite">
+        {!online && (
+          <p className="notice">
+            <WifiOff size={16} /> Offline for a moment. Your draft stays on this
+            device.
+          </p>
+        )}
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        {notice && <p className="notice">{notice}</p>}
+        {pending && (
+          <div className="notice">
+            <span>An answer is waiting for confirmation.</span>
+            <button onClick={retryPending} disabled={busy}>
+              Retry save
+            </button>
+            <button
+              className="text-button"
+              onClick={() => {
+                localStorage.removeItem(storage + "pending");
+                setPending(null);
+                setError("");
+                refresh();
+              }}
+            >
+              Reload current session
+            </button>
+          </div>
+        )}
+      </div>
+      <main id="main">
+        {focused && session ? (
+          <section className="player" aria-label="Learning session">
+            <div className="session-top">
+              <span className="eyebrow">
+                {feedback
+                  ? "A moment to learn"
+                  : task
+                    ? labels[task.block]
+                    : "Session complete"}
+              </span>
+              <span>
+                {Math.min(
+                  session.index + (!feedback ? 1 : 0),
+                  session.tasks.length,
+                )}{" "}
+                / {session.tasks.length}
+              </span>
+            </div>
+            <div className="progress-line">
+              <span
+                style={{
+                  width: `${session.tasks.length ? (session.index / session.tasks.length) * 100 : 100}%`,
+                }}
+              />
+            </div>
+            {feedback ? (
+              <div className="feedback" key={session.index}>
+                <span className="feedback-mark">
+                  {feedback.result === "incorrect" ? (
+                    <RotateCcw size={28} />
+                  ) : (
+                    <Check size={28} />
+                  )}
+                </span>
+                <p className="eyebrow">
+                  {feedback.result === "correct"
+                    ? feedback.independent
+                      ? "Recalled without help"
+                      : "Useful supported practice"
+                    : feedback.result === "pending"
+                      ? "Saved for coaching"
+                      : feedback.result === "self-rated"
+                        ? "Self-rated recall"
+                        : "Let’s try that again later"}
+                </p>
+                <h1>{feedback.answer}</h1>
+                <p className="explanation">{feedback.explanation}</p>
+                {feedback.result === "pending" && (
+                  <p className="muted">
+                    This is one possible answer. Your writing is saved, with no
+                    automatic right/wrong score.
+                  </p>
+                )}
+                {feedback.nextDue && (
+                  <p className="muted">
+                    Scheduled recall:{" "}
+                    {new Date(feedback.nextDue).toLocaleString(undefined, {
+                      weekday: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
+                )}
+                <button className="primary" onClick={next}>
+                  {session.complete ? "Finish this session" : "Continue"}
+                  <ArrowRight size={19} />
+                </button>
+                <button
+                  className="text-button"
+                  onClick={flagAnswer}
+                  disabled={busy}
+                >
+                  <Flag size={15} /> Flag correction
+                </button>
+              </div>
+            ) : task ? (
+              <div className="question" key={`${session.id}-${session.index}`}>
+                <p className="context-label">
+                  {session.lesson.germanTitle}
+                  {task.repair ? " · repair practice" : ""}
+                </p>
+                {task.context && (
+                  <blockquote lang="de">{task.context}</blockquote>
+                )}
+                {task.audio && (
+                  <div className="audio-wrap">
+                    <audio
+                      key={task.audio}
+                      ref={audio}
+                      controls
+                      preload="none"
+                      src={task.audio}
+                      onEnded={() => help("audio")}
+                      aria-label="German practice recording"
+                    />
+                    <small>
+                      Original synthetic practice audio. Listen to the end
+                      before answering.
+                    </small>
+                    <button
+                      className="text-button"
+                      onClick={() => help("transcript")}
+                      disabled={busy}
+                    >
+                      Read transcript · supported practice
+                    </button>
+                  </div>
+                )}
+                <h1 lang={task.skill === "recognition" ? "de" : undefined}>
+                  {task.prompt}
+                </h1>
+                <p className="muted">
+                  {task.cardId
+                    ? task.skill === "production"
+                      ? "Recall the German, including the article."
+                      : "Recall the meaning in English."
+                    : task.supports.includes("initial teaching")
+                      ? "Read the short example, then try the response. This first step is supported practice."
+                      : "Try it before asking for a hint."}
+                </p>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    submit();
+                  }}
+                >
+                  {task.kind === "open" ? (
+                    <textarea
+                      ref={(e) => {
+                        input.current = e;
+                      }}
+                      aria-label="Your answer"
+                      placeholder="Your words. A few sentences is enough."
+                      value={answer}
+                      onChange={(e) => draft(e.target.value)}
+                      rows={5}
+                      autoCapitalize="sentences"
+                    />
+                  ) : (
+                    <input
+                      ref={(e) => {
+                        input.current = e;
+                      }}
+                      aria-label="Your answer"
+                      placeholder="Your answer…"
+                      value={answer}
+                      onChange={(e) => draft(e.target.value)}
+                      autoComplete="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      autoCapitalize="off"
+                    />
+                  )}
+                  {support && (
+                    <aside className="support" role="status">
+                      {support.split("\n").map((line, i) => (
+                        <p key={i}>{line}</p>
+                      ))}
+                    </aside>
+                  )}
+                  <div className="answer-actions">
+                    <button
+                      className="primary"
+                      disabled={
+                        busy ||
+                        !!pending ||
+                        !answer.trim() ||
+                        (!!task.audio &&
+                          !task.audioPlayed &&
+                          !task.supports.includes("transcript"))
+                      }
+                      type="submit"
+                    >
+                      {busy
+                        ? "Saving…"
+                        : task.kind === "open"
+                          ? "Save for coaching"
+                          : "Check answer"}
+                      <ArrowRight size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="text-button"
+                      onClick={() => help("hint")}
+                      disabled={busy}
+                    >
+                      A small hint
+                    </button>
+                  </div>
+                  {task.cardId && (
+                    <div className="ratings" aria-label="Recall rating">
+                      <span>How did recall feel?</span>
+                      <button
+                        type="button"
+                        disabled={busy || !!pending}
+                        onClick={() => submit("again")}
+                      >
+                        Forgot
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy || !!pending || !answer.trim()}
+                        onClick={() => submit("hard")}
+                      >
+                        Correct, but hard
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy || !!pending || !answer.trim()}
+                        onClick={() => submit("easy")}
+                      >
+                        Easy
+                      </button>
+                      <small>
+                        If unsure, check your answer first. Different
+                        translations are saved as self-ratings.
+                      </small>
+                    </div>
+                  )}
+                  {!task.cardId && task.kind !== "open" && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      disabled={busy || !!pending}
+                      onClick={() => submit("again")}
+                    >
+                      I don’t know yet
+                    </button>
+                  )}
+                </form>
+                <div className="quiet-tools">
+                  <button
+                    className="text-button"
+                    disabled={busy}
+                    onClick={() => help("example")}
+                  >
+                    <BookOpen size={15} /> Explain the pattern
+                  </button>
+                  <span>Answers and support are saved separately.</span>
+                </div>
+              </div>
+            ) : (
+              <div className="empty">
+                <h1>A useful pause.</h1>
+                <p>Your session is saved.</p>
+                <button className="primary" onClick={() => setFocused(false)}>
+                  Back to Today
+                </button>
+              </div>
+            )}
+          </section>
+        ) : (
+          <>
+            {view === "today" && (
+              <>
+                <section className="today-hero">
+                  <div className="hero-copy">
+                    <p className="eyebrow">A little German. More often.</p>
+                    <h1>{home.lesson.title}</h1>
+                    <p className="lead">{home.lesson.outcome}</p>
+                    <div className="session-choices">
+                      <fieldset>
+                        <legend>Time for yourself</legend>
+                        <div className="segmented">
+                          {[5, 10, 15, 25].map((n) => (
+                            <button
+                              key={n}
+                              aria-pressed={pref.minutes === n}
+                              onClick={() => savePrefs({ ...pref, minutes: n })}
+                              disabled={busy}
+                            >
+                              {n} min
+                            </button>
+                          ))}
+                          <button onClick={() => setSettings(true)}>
+                            Custom
+                          </button>
+                        </div>
+                      </fieldset>
+                      <button
+                        className="audio-choice"
+                        onClick={() =>
+                          savePrefs({
+                            ...pref,
+                            audio:
+                              pref.audio === "headphones"
+                                ? "silent"
+                                : "headphones",
+                          })
+                        }
+                      >
+                        {pref.audio === "headphones" ? (
+                          <Headphones size={18} />
+                        ) : (
+                          <VolumeX size={18} />
+                        )}{" "}
+                        {pref.audio === "headphones" ? "Headphones" : "Silent"}
+                      </button>
+                    </div>
+                    <button
+                      className="primary large"
+                      onClick={() => begin()}
+                      disabled={busy}
+                    >
+                      {session && !session.complete
+                        ? "Continue learning"
+                        : "Begin today"}
+                      <ArrowRight size={20} />
+                    </button>
+                    <p className="small muted">
+                      {session && !session.complete
+                        ? "Your place is saved. Pick up where you paused."
+                        : "One task at a time. Leave whenever you need to."}
+                    </p>
+                  </div>
+                  <div className="scenario-art" aria-hidden="true">
+                    <span className="art-top">DE / ALLTAG</span>
+                    <div className="art-circle">
+                      <span>
+                        Guten
+                        <br />
+                        <em>Tag.</em>
+                      </span>
+                    </div>
+                    <div className="art-caption">
+                      <span>{home.lesson.germanTitle}</span>
+                      <span>01 — ∞</span>
+                    </div>
+                  </div>
+                </section>
+                <section className="daily-route">
+                  <div className="section-heading">
+                    <div>
+                      <p className="eyebrow">Your rhythm</p>
+                      <h2>Small sessions. Lasting recall.</h2>
+                    </div>
+                    <button
+                      className="text-button"
+                      onClick={() => setSettings(true)}
+                    >
+                      Arrange your day <ArrowRight size={16} />
+                    </button>
+                  </div>
+                  <div className="route-list">
+                    {pref.order.map((b, i) => (
+                      <button
+                        key={b}
+                        className="route-row"
+                        onClick={() =>
+                          b === "conversation" ? run(loadBrief) : begin([b])
+                        }
+                        disabled={
+                          busy || (b === "listening" && pref.audio === "silent")
+                        }
+                      >
+                        <span className="row-number">
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        <div>
+                          <h3>{labels[b]}</h3>
+                          <p>
+                            {b === "recall"
+                              ? `${home.due} due · up to ${pref.newLimit} new words or phrases per day`
+                              : b === "scenario"
+                                ? home.lesson.germanTitle
+                                : b === "later"
+                                  ? "Return to a pattern in a different sentence"
+                                  : b === "conversation"
+                                    ? "Take today’s situation into your German ChatGPT project"
+                                    : b === "listening"
+                                      ? pref.audio === "silent"
+                                        ? "Available when you switch to headphones"
+                                        : "A short recording, then one useful detail"
+                                      : b === "writing"
+                                        ? "A short message in your own words"
+                                        : "Read a little. Retrieve the meaning."}
+                          </p>
+                        </div>
+                        <ArrowRight size={18} />
+                      </button>
+                    ))}
+                  </div>
+                  <p className="small muted">
+                    Aim for 45–60 minutes across your day. Five useful minutes
+                    still count as practice.
+                  </p>
+                </section>
+              </>
+            )}
+            {view === "practice" && (
+              <section className="practice-page">
+                <p className="eyebrow">Everyday German</p>
+                <h1>Something you can use.</h1>
+                <p className="lead">
+                  Choose a situation. Practise it in small steps.
+                </p>
+                <input
+                  className="search"
+                  aria-label="Search scenarios"
+                  placeholder="Find a situation…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                <div className="practice-tools">
+                  <button
+                    className="text-button"
+                    onClick={() =>
+                      begin(["later"], undefined, false, { weekly: true })
+                    }
+                  >
+                    Try a fresh mixed check <ArrowRight size={16} />
+                  </button>
+                  <button
+                    className="text-button"
+                    onClick={() =>
+                      run(async () =>
+                        setLibrary(
+                          await api<
+                            { id: string; german: string; english: string }[]
+                          >("library"),
+                        ),
+                      )
+                    }
+                  >
+                    Browse the vocabulary library <BookOpen size={16} />
+                  </button>
+                </div>
+                <div className="scenario-list">
+                  {home.bank
+                    .filter((l) =>
+                      `${l.title} ${l.germanTitle} ${l.outcome}`
+                        .toLowerCase()
+                        .includes(search.toLowerCase()),
+                    )
+                    .map((l, i) => (
+                      <button
+                        className="scenario-row"
+                        key={l.id}
+                        onClick={() =>
+                          begin(
+                            [
+                              "scenario",
+                              "reading",
+                              ...(pref.audio === "headphones"
+                                ? ["listening" as Block]
+                                : []),
+                              "writing",
+                              "later",
+                            ],
+                            l.id,
+                          )
+                        }
+                        disabled={busy}
+                      >
+                        <span className="row-number">
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        <div>
+                          <h2>{l.germanTitle}</h2>
+                          <p>{l.outcome}</p>
+                        </div>
+                        <ArrowRight size={20} />
+                      </button>
+                    ))}
+                </div>
+                <section className="note-panel">
+                  <RotateCcw size={24} />
+                  <div>
+                    <h2>Just a little more recall?</h2>
+                    <p>Extra practice is separate from scheduled reviews.</p>
+                    <button
+                      className="text-button"
+                      onClick={() => begin(["recall"], undefined, true)}
+                    >
+                      Practise again <ArrowRight size={16} />
+                    </button>
+                  </div>
+                </section>
+              </section>
+            )}
+            {view === "progress" && (
+              <section className="progress-page">
+                <p className="eyebrow">Evidence, over time</p>
+                <h1>See what’s staying.</h1>
+                <p className="lead">
+                  What you can retrieve and use without help.
+                </p>
+                {report ? (
+                  <>
+                    <div className="evidence-table">
+                      {report.skills.map((s) => (
+                        <div key={s.skill} className="evidence-row">
+                          <h3>{s.skill}</h3>
+                          <div>
+                            <strong>
+                              {s.checked
+                                ? `${s.independent} / ${s.checked}`
+                                : "Not assessed"}
+                            </strong>
+                            <p>
+                              {s.checked
+                                ? "checked attempts recalled without help"
+                                : "Independent evidence is still needed."}
+                              {s.delayed > 0
+                                ? ` · ${s.delayed} after at least a day`
+                                : ""}
+                              {s.pending > 0
+                                ? ` · ${s.pending} awaiting coaching`
+                                : ""}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="small muted">
+                      Hints and repairs are supported practice. Self-ratings and
+                      conversation observations are labelled separately. These
+                      are not Goethe scores.
+                    </p>
+                    <section className="subsection">
+                      <h2>What needs another visit</h2>
+                      {report.targets.length ? (
+                        report.targets.map((t) => (
+                          <div className="target-row" key={t.target}>
+                            <span>{t.target.replaceAll("-", " ")}</span>
+                            <span className="status">{t.status}</span>
+                            <small>
+                              {t.independent}/{t.count} fresh checks
+                            </small>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="muted">
+                          Your first independent attempts will build this
+                          picture.
+                        </p>
+                      )}
+                    </section>
+                    <section className="subsection">
+                      <h2>From your conversations</h2>
+                      {report.observations.length ? (
+                        report.observations.map((o, i) => (
+                          <article className="observation" key={i}>
+                            <small>
+                              {new Date(o.occurredAt).toLocaleDateString()} ·{" "}
+                              {o.source}
+                            </small>
+                            <p>{o.summary}</p>
+                            <p className="muted">
+                              Next:{" "}
+                              {o.nextTargets.join(", ") ||
+                                "Continue current targets."}
+                            </p>
+                          </article>
+                        ))
+                      ) : (
+                        <p className="muted">
+                          Bring back a session summary from your German ChatGPT
+                          project to keep practice connected.
+                        </p>
+                      )}
+                      <button
+                        className="text-button"
+                        onClick={() => run(loadBrief)}
+                      >
+                        Open shared Learning Brief <ArrowRight size={16} />
+                      </button>
+                    </section>
+                    <section className="subsection">
+                      <h2>Your route toward B1</h2>
+                      {curriculum.map((c) => (
+                        <div className="curriculum-row" key={c.weeks}>
+                          <span>Weeks {c.weeks}</span>
+                          <div>
+                            <h3>{c.title}</h3>
+                            <p>{c.focus}</p>
+                          </div>
+                        </div>
+                      ))}
+                      <p className="muted">
+                        A flexible 20-week route. Fresh weekly checks set the
+                        pace; weeks do not certify completion.
+                      </p>
+                      <a
+                        className="text-button"
+                        href="https://www.goethe.de/ins/de/en/m/prf/gzb1/ueb.html"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Official Goethe B1 practice <ArrowRight size={16} />
+                      </a>
+                    </section>
+                    <p className="small muted">
+                      {report.cards.enrolled} recall directions enrolled ·{" "}
+                      {report.cards.partialHistory} with incomplete legacy
+                      history. Original review history and due dates are
+                      preserved.
+                    </p>
+                  </>
+                ) : (
+                  <p>Loading your evidence…</p>
+                )}
+              </section>
+            )}
+            <footer>
+              <span>Little by little. In your own words.</span>
+              <button className="text-button" onClick={() => run(loadBrief)}>
+                <MessageCircle size={16} /> Continue in ChatGPT
+              </button>
+            </footer>
+          </>
+        )}
+      </main>
+      {library && (
+        <div className="modal-backdrop">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Vocabulary library"
+          >
+            <button
+              className="close icon-button"
+              aria-label="Close library"
+              onClick={() => setLibrary(null)}
+            >
+              <X />
+            </button>
+            <h2>Your vocabulary library</h2>
+            <p className="muted">
+              600 words remain available. Choose a direction; each has its own
+              schedule.
+            </p>
+            <input
+              aria-label="Search vocabulary"
+              placeholder="Search German or English…"
+              onChange={(e) =>
+                run(async () =>
+                  setLibrary(
+                    await api<
+                      { id: string; german: string; english: string }[]
+                    >(`library&q=${encodeURIComponent(e.target.value)}`),
+                  ),
+                )
+              }
+            />
+            {library.map((c) => (
+              <div className="library-row" key={c.id}>
+                <strong lang="de">{c.german}</strong>
+                <p>{c.english}</p>
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    setLibrary(null);
+                    begin(["recall"], undefined, false, {
+                      cardId: `${c.id}:en`,
+                    });
+                  }}
+                >
+                  Produce German
+                </button>
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    setLibrary(null);
+                    begin(["recall"], undefined, false, {
+                      cardId: `${c.id}:de`,
+                    });
+                  }}
+                >
+                  Recall meaning
+                </button>
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    setLibrary(null);
+                    begin(["recall"], undefined, true, {
+                      cardId: `${c.id}:en`,
+                    });
+                  }}
+                >
+                  Extra practice
+                </button>
+              </div>
+            ))}
+          </section>
+        </div>
+      )}
+      {settings && (
+        <div className="modal-backdrop">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
+          >
+            <button
+              className="close icon-button"
+              aria-label="Close settings"
+              onClick={() => setSettings(false)}
+            >
+              <X />
+            </button>
+            <p className="eyebrow">Make room for learning</p>
+            <h2 id="settings-title">Your preferences</h2>
+            <label>
+              Session length · minutes
+              <input
+                type="number"
+                min="1"
+                max="120"
+                defaultValue={pref.minutes}
+                onBlur={(e) => {
+                  const n = Number(e.target.value);
+                  if (n >= 1 && n <= 120 && n !== pref.minutes)
+                    savePrefs({ ...pref, minutes: n });
+                }}
+              />
+            </label>
+            <label>
+              New words or phrases per day
+              <select
+                value={pref.newLimit}
+                onChange={(e) =>
+                  savePrefs({ ...pref, newLimit: Number(e.target.value) })
+                }
+              >
+                {[0, 1, 2, 3, 4, 5].map((n) => (
+                  <option key={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+            <p className="small muted">
+              Well-retained cards move to longer intervals. Desired retention:
+              90% with FSRS.
+            </p>
+            <fieldset>
+              <legend>Block order</legend>
+              {pref.order.map((b, i) => (
+                <div className="order-row" key={b}>
+                  <span>{labels[b]}</span>
+                  <button
+                    className="icon-button"
+                    aria-label={`Move ${labels[b]} up`}
+                    disabled={i === 0 || busy}
+                    onClick={() => {
+                      const order = [...pref.order];
+                      [order[i - 1], order[i]] = [order[i], order[i - 1]];
+                      savePrefs({ ...pref, order });
+                    }}
+                  >
+                    <ChevronUp size={17} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    aria-label={`Move ${labels[b]} down`}
+                    disabled={i === pref.order.length - 1 || busy}
+                    onClick={() => {
+                      const order = [...pref.order];
+                      [order[i + 1], order[i]] = [order[i], order[i + 1]];
+                      savePrefs({ ...pref, order });
+                    }}
+                  >
+                    <ChevronDown size={17} />
+                  </button>
+                </div>
+              ))}
+            </fieldset>
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={pref.preparation}
+                onChange={(e) =>
+                  savePrefs({ ...pref, preparation: e.target.checked })
+                }
+              />{" "}
+              Allow the private daily preparation task to use this learning
+              record
+            </label>
+            <p className="small muted">
+              This grants record access to the owner-private preparation
+              endpoint. A hosted schedule must also be configured.
+            </p>
+            <button
+              className="text-button"
+              onClick={() =>
+                run(async () => {
+                  const data = await api("export");
+                  const url = URL.createObjectURL(
+                    new Blob([JSON.stringify(data, null, 2)], {
+                      type: "application/json",
+                    }),
+                  );
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "german-me-private-learning-export.json";
+                  a.click();
+                  URL.revokeObjectURL(url);
+                })
+              }
+            >
+              <Download size={17} /> Export my private learning record
+            </button>
+            <p className="small muted">
+              System fonts. No autoplay. Reduced motion follows your device
+              preference.
+            </p>
+            <button className="primary" onClick={() => setSettings(false)}>
+              Done <Check size={17} />
+            </button>
+          </section>
+        </div>
+      )}
+      {brief && (
+        <div className="modal-backdrop">
+          <section
+            className="modal wide"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="brief-title"
+          >
+            <button
+              className="close icon-button"
+              aria-label="Close Learning Brief"
+              onClick={() => setBrief(null)}
+            >
+              <X />
+            </button>
+            <p className="eyebrow">
+              One learning record · version {brief.version}
+            </p>
+            <h2 id="brief-title">Take the conversation with you.</h2>
+            <p>{brief.lesson.mission}</p>
+            <ol className="handoff">
+              <li>
+                Connect the German Me plugin in ChatGPT, then ask it to load
+                your Learning Brief.
+              </li>
+              <li>Practise by voice or text in your German project.</li>
+              <li>
+                Finish in text and ask it to save a session summary. Check the
+                save confirmation.
+              </li>
+            </ol>
+            <details>
+              <summary>Copy-and-paste fallback</summary>
+              <p>
+                Paste this brief before voice. Afterwards, ask for the
+                session-summary JSON and import it below.
+              </p>
+              <button className="text-button" onClick={() => run(copyBrief)}>
+                <Copy size={16} /> Copy brief + summary template
+              </button>
+              <pre>{brief.text}</pre>
+            </details>
+            <label>
+              Import a session summary
+              <textarea
+                rows={5}
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder="Paste the JSON session summary here"
+              />
+            </label>
+            <button
+              className="primary"
+              disabled={busy || !importText.trim()}
+              onClick={() =>
+                run(async () => {
+                  let payload;
+                  try {
+                    payload = JSON.parse(
+                      importText
+                        .replace(/^```(?:json)?\s*/, "")
+                        .replace(/\s*```$/, ""),
+                    );
+                  } catch {
+                    throw Error("Please paste a valid JSON summary.");
+                  }
+                  const r = await post({ action: "summary", ...payload });
+                  setImportText("");
+                  setNotice(
+                    r.historical
+                      ? "Saved as historical evidence. Newer priorities were preserved."
+                      : "Session saved. Your next targets are updated.",
+                  );
+                  await refresh();
+                  setBrief(null);
+                  if (view === "progress")
+                    setReport(await api<Progress>("progress"));
+                })
+              }
+            >
+              Save session summary <ArrowRight size={16} />
+            </button>
+            <p className="small muted">
+              Same session ID, same save: importing twice never duplicates
+              evidence.
+            </p>
+          </section>
+        </div>
+      )}
+    </div>
+  );
 }

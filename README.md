@@ -1,29 +1,55 @@
-# German Me
+# German Me v2
 
-Owner-private Goethe A2–B1 study app in `Me/German`, built with React/Vinext and Cloudflare D1.
+A private scenario-based German learning app, built with React/Vinext, Cloudflare Workers and D1. Source is public; learning records are private.
 
-- 600 distinct vocabulary cards: 490 A2 core (including foundations), 110 B1 expansion, plus 40 case exercises.
-- German ↔ English with independent schedules, noun articles/plurals, verb forms, and original B1 example sentences.
-- Rated recall: Again 1 minute; new Hard 6 minutes; new Good 10 minutes, then 1 day after the next Good; new Easy 4 days. Hard at the second learning step repeats 10 minutes. Mature reviews retain the existing SM-2-inspired schedule, not Anki FSRS.
-- Due cards first, then up to 20 new cards per session. When no other cards remain, short learning steps may appear up to 20 minutes early.
-- Auto repeat: a fixed set of up to 20 due, reviewed-today, then unseen cards cycles through three rounds. Timed reveal/advance, three speeds, manual reveal, pause/resume, and tab-hidden pause. This practice does not infer recall, submit ratings, or change review intervals.
-- Card faces are mounted individually with a fade/slide transition, avoiding mirrored text during card changes.
-- D1 progress is keyed by authenticated ChatGPT identity. Reviews retain idempotency and optimistic concurrency protection. Existing IDs, due dates, and saved progress are preserved.
-- Vienna-local daily goal/streak. Browser pronunciation uses installed German voices.
+## Learning loop
 
-## Content and sources
+Today → focused practice → feedback → repair after intervening tasks → later retrieval. Choose session length, block order and silent/headphone mode. Sessions are saved server-side; switching blocks preserves unfinished sessions. Browser drafts and pending submissions survive brief disconnections, with idempotent retry. This is online-first, not an offline PWA.
 
-This is an independently curated study bank for A2–B1 preparation, not the complete Goethe exam syllabus or an official Goethe product. Levels are study groupings: foundations remain in A2 core, and B1 expansion focuses on opinions, reasons, work, public services, travel problems, and connected sentences. Case exercises cover nominative, accusative, dative, two-way prepositions, and introductory genitive.
+The original 600-word vocabulary library and stable review IDs remain available. Production (`:en`) and recognition (`:de`) use separate FSRS schedules through `ts-fsrs`, 90% desired retention and 1/10-minute learning steps. New material is capped at five items per day by default. Extra practice does not change schedules. New phrases are taught before retrieval. Copying, hints and repairs never count as unaided success.
 
-Headwords were checked against the official [Goethe A2 word list](https://www.goethe.de/pro/relaunch/prf/ms/Goethe-Zertifikat_A2_Wortliste.pdf) and [Goethe B1 word list](https://www.goethe.de/pro/relaunch/prf/id/Goethe-Zertifikat_B1_Wortliste.pdf). Inflections/reflexive forms and supporting foundations are retained where useful. Translations, learning notes, and examples are independently authored. Four older stretch terms outside these references remain API-valid for older clients but no longer appear in the active bank; their progress is not deleted.
+Fourteen original scenarios cover groceries, cafés, clarification, appointments, weekends, plans, transit, training and related variations. Each has five phrases, a pattern, constrained practice, reading, original synthetic German audio, writing and a conversation mission. Audio is generated with macOS Anna and FFmpeg; it is clearly labelled synthetic. Goethe exam material is linked at its original source, not copied. A finite fresh-check bank supports baseline/weekly mixed checks; repeated prompts cease to count as fresh.
 
-Recall behavior draws on [Anki learning steps](https://docs.ankiweb.net/deck-options.html#learning-steps) and [Auto Advance](https://docs.ankiweb.net/deck-options.html#auto-advance). The app's hands-free practice is deliberately separate from remembered/forgotten ratings.
+The 20-week route is provisional. Weeks 5–20 are curriculum goals, not a claim that a complete 20-week course or validated exam simulation exists. Independent writing/speaking assessments happen through coaching and official module practice. The app does not infer pronunciation from transcripts or manufacture a fluency percentage.
 
-## Development and verification
+## One learning record
 
-- `npm run dev -- --port 5174`: portable preview with simulated sign-in.
-- `node --experimental-strip-types --test tests/recall.test.mjs`: learning transitions, legacy scheduling, selection and repeat-order regressions.
-- `npx tsc --noEmit`: type check.
-- `npm run build`: Worker build. Publish via the Sites workflow, never directly with Wrangler.
+- `lib/learning/service.ts`: shared browser/MCP learning services.
+- `learning_state`: account-scoped current settings, FSRS cards, session snapshots, priorities and published lesson.
+- `learning_events`: append-only original attempts, support, summaries, corrections, publication and idempotency results.
+- `preparation_binding`: explicit owner account binding for unattended preparation.
+- `app/api/learning`: authenticated browser reads/writes.
+- `app/mcp`: stateless Streamable HTTP MCP using the official SDK.
+- `app/api/preparation`: owner-private hosted preparation writer with verified readback.
 
-Cloud migrations in `drizzle/` are schema-only. Local test data and source-reference downloads are ignored and never deployed. No schema migration is needed for the new learning-step state.
+Five MCP tools: `get_learning_brief`, `get_practice_session`, `get_progress`, `save_session_summary`, `publish_lesson`. Tools require the platform-supplied learner identity; service access alone does not impersonate a learner. The Site UI provides copyable briefs and versioned summary import when tools are unavailable. Duplicate IDs with different content are rejected. Older summaries preserve newer priorities and remain historical evidence.
+
+Rule-based checking is restricted to constrained exercises. Open writing is pending coaching. Flagged corrections are excluded from progress claims. Recognition, production, grammar, reading, listening, writing and speaking remain separate. Provisional pattern stability requires >=80% in at least two fresh mixed checks on separate days spanning a week, with at least two samples per day and transfer. This is a coaching heuristic, never a Goethe score.
+
+## Privacy and migration
+
+`LEARNER_PROFILE.md`, `private/`, exports, environment files and local runtime state are ignored. Never place private answers, profiles or credentials in public assets or fixtures. Public answer keys remain server-only. Tests use synthetic accounts and answers.
+
+Existing `progress` and `reviews` are retained unchanged. Lazy per-account migration replays usable historical ratings into FSRS and preserves every original due date until an actual new review. Incomplete history is explicitly labelled. Old review-writing clients receive an upgrade response to avoid concurrent scheduling systems. Back up through the private export before operational recovery; do not reset production storage.
+
+`archive/german-me-v1` preserves the pre-redesign app. Development is on `german-me-v2`; Sites publishes the exact pushed commit through its configured source branch. The older LangCoach `v1`/`v2` branches are unchanged.
+
+## Development
+
+- `npm run dev -- --port 5174`: local preview with synthetic local sign-in.
+- `npm test`: service/database integration tests and legacy scheduler regressions.
+- `npm run typecheck`: TypeScript.
+- `npm run build`: Worker build.
+- `npx tsx scripts/generate-audio.mjs`: regenerate original audio on macOS with Anna and FFmpeg.
+
+After changing schema: `npm run db:generate`, inspect schema-only SQL, build, then apply only pending migrations locally:
+
+```sh
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_salty_black_crow.sql
+```
+
+Sites applies hosted migrations during publication. Never publish with Wrangler. Failed deployments may already have applied migrations; keep applied SQL immutable. Schema additions preserve the original tables, so an earlier app version remains recoverable without deleting new data.
+
+## Connection and daily preparation
+
+See [ChatGPT connection](docs/CHATGPT_CONNECTION.md) and [daily preparation](docs/DAILY_PREPARATION.md). Hosted publication is separate from plugin installation, actual tool verification and phone voice testing. Do not claim these steps are complete without observing them.

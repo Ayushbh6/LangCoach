@@ -44,3 +44,10 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+
+# Private learning context and exports
+/LEARNER_PROFILE.md
+/private/
+/learning-exports/
+*.private.json
+*.tsbuildinfo
