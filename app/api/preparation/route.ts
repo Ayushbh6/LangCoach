@@ -1,5 +1,10 @@
+import { ZodError } from "zod";
 import { env } from "cloudflare:workers";
-import { prepare, LearningError } from "../../../lib/learning/service";
+import {
+  prepare,
+  preparationBrief,
+  LearningError,
+} from "../../../lib/learning/service";
 export const dynamic = "force-dynamic";
 // This service endpoint is protected by the OWNER-PRIVATE Sites dispatcher.
 // Never make this Site public without replacing this platform access boundary.
@@ -10,9 +15,16 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid origin" }, { status: 403 });
   try {
     if (!env.DB) throw Error();
-    return Response.json(await prepare(env.DB), {
-      headers: { "Cache-Control": "no-store" },
-    });
+    const text = await request.text();
+    if (text.length > 40000)
+      throw new LearningError("Lesson is too large.", 413);
+    const body = text ? JSON.parse(text) : {};
+    return Response.json(
+      await prepare(env.DB, Object.keys(body).length ? body : undefined),
+      {
+        headers: { "Cache-Control": "no-store" },
+      },
+    );
   } catch (e) {
     return Response.json(
       {
@@ -21,7 +33,40 @@ export async function POST(request: Request) {
             ? e.message
             : "Preparation failed; existing lessons are preserved.",
       },
-      { status: e instanceof LearningError ? e.status : 503 },
+      {
+        status:
+          e instanceof LearningError
+            ? e.status
+            : e instanceof ZodError || e instanceof SyntaxError
+              ? 400
+              : 503,
+      },
+    );
+  }
+}
+
+export async function GET() {
+  try {
+    if (!env.DB) throw Error();
+    return Response.json(await preparationBrief(env.DB), {
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  } catch (e) {
+    return Response.json(
+      {
+        error:
+          e instanceof LearningError
+            ? e.message
+            : "Preparation source unavailable.",
+      },
+      {
+        status:
+          e instanceof LearningError
+            ? e.status
+            : e instanceof ZodError || e instanceof SyntaxError
+              ? 400
+              : 503,
+      },
     );
   }
 }

@@ -8,6 +8,8 @@ Today → focused practice → feedback → repair after intervening tasks → l
 
 The original 600-word vocabulary library and stable review IDs remain available. Production (`:en`) and recognition (`:de`) use separate FSRS schedules through `ts-fsrs`, 90% desired retention and 1/10-minute learning steps. New material is capped at five items per day by default. Extra practice does not change schedules. New phrases are taught before retrieval. Copying, hints and repairs never count as unaided success.
 
+Validated original lessons can also be published through the private connection without redeploying. Content and exercise versions preserve active snapshots; existing recall prompts cannot be silently changed.
+
 Fourteen original scenarios cover groceries, cafés, clarification, appointments, weekends, plans, transit, training and related variations. Each has five phrases, a pattern, constrained practice, reading, original synthetic German audio, writing and a conversation mission. Audio is generated with macOS Anna and FFmpeg; it is clearly labelled synthetic. Goethe exam material is linked at its original source, not copied. A finite fresh-check bank supports baseline/weekly mixed checks; repeated prompts cease to count as fresh.
 
 The 20-week route is provisional. Weeks 5–20 are curriculum goals, not a claim that a complete 20-week course or validated exam simulation exists. Independent writing/speaking assessments happen through coaching and official module practice. The app does not infer pronunciation from transcripts or manufacture a fluency percentage.

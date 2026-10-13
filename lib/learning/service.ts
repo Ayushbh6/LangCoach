@@ -79,14 +79,119 @@ export const settingsSchema = z
     preparation: z.boolean(),
   })
   .strict();
+export const lessonSchema = z
+  .object({
+    id,
+    version: z.number().int().min(1),
+    title: short,
+    germanTitle: short,
+    outcome: short,
+    scene: short,
+    dialogue: z.array(short).min(2).max(12),
+    pattern: short,
+    examples: z.array(short).min(2).max(4),
+    words: z
+      .array(
+        z
+          .object({ german: short, english: short, note: short.optional() })
+          .strict(),
+      )
+      .min(1)
+      .max(5),
+    exercises: z
+      .array(
+        z
+          .object({
+            id,
+            version: z.number().int().min(1),
+            target: id,
+            skill,
+            prompt: short,
+            answer: z.array(z.string().max(1000)).max(12),
+            explanation: short,
+            hint: short,
+            context: short.optional(),
+            transcript: short.optional(),
+            audio: z
+              .string()
+              .regex(/^\/audio\/[a-z-]+\.mp3$/)
+              .optional(),
+            fresh: z.boolean().optional(),
+            transfer: z.boolean().optional(),
+            kind: z.enum(["constrained", "open"]).optional(),
+            model: short.optional(),
+          })
+          .strict(),
+      )
+      .min(3)
+      .max(20),
+    mission: short,
+  })
+  .strict();
 export const publishSchema = z
   .object({
     requestId: id,
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    lessonId: z.enum(lessons.map((x) => x.id) as [string, ...string[]]),
+    lessonId: id.optional(),
+    lesson: lessonSchema.optional(),
     baseVersion: z.number().int().min(0),
   })
   .strict();
+function catalogue(s: State): Lesson[] {
+  const map = new Map(lessons.map((l) => [l.id, l]));
+  for (const lesson of Object.values(s.content ?? {})) {
+    if (!map.has(lesson.id) || map.get(lesson.id)!.version < lesson.version)
+      map.set(lesson.id, lesson);
+  }
+  return [...map.values()];
+}
+function validateLesson(lesson: Lesson, s: State) {
+  if (
+    new Set(lesson.exercises.map((e) => e.id)).size !== lesson.exercises.length
+  )
+    throw new LearningError("Exercise IDs must be unique.");
+  for (const e of lesson.exercises) {
+    if (!e.id.startsWith(lesson.id + "-"))
+      throw new LearningError("Exercise IDs must begin with the lesson ID.");
+    if (e.kind === "open") {
+      if (!e.model) throw new LearningError("Open tasks need a model answer.");
+    } else if (!e.answer.length || e.answer.some((a) => !a.trim()))
+      throw new LearningError("Constrained tasks need explicit answer keys.");
+    if (e.skill === "writing" && e.kind !== "open")
+      throw new LearningError("Open writing must remain pending coaching.");
+    if (e.skill === "listening") {
+      const original = lessons
+        .flatMap((l) => l.exercises)
+        .find((x) => x.audio === e.audio && x.transcript === e.transcript);
+      if (!original)
+        throw new LearningError(
+          "Listening needs an available, verified recording with its matching transcript.",
+        );
+    }
+  }
+  const previous = catalogue(s).find((l) => l.id === lesson.id);
+  if (previous) {
+    if (
+      lesson.version <= previous.version &&
+      JSON.stringify(lesson) !== JSON.stringify(previous)
+    )
+      throw new LearningError("Changed content needs a higher version.", 409);
+    if (JSON.stringify(previous.words) !== JSON.stringify(lesson.words))
+      throw new LearningError(
+        "Keep existing word prompts stable; use a new lesson ID for a different word set.",
+        409,
+      );
+    for (const e of lesson.exercises) {
+      const old = previous.exercises.find((x) => x.id === e.id);
+      if (
+        old &&
+        JSON.stringify(old) !== JSON.stringify(e) &&
+        e.version <= old.version
+      )
+        throw new LearningError("Changed exercises need higher versions.", 409);
+    }
+  }
+}
 type Event = {
   request: unknown;
   result: unknown;
@@ -219,7 +324,7 @@ function cardTask(cardId: string, s: State): Task | undefined {
     english = "",
     note = "";
   if (bare.startsWith("phrase-")) {
-    for (const lesson of lessons) {
+    for (const lesson of catalogue(s)) {
       const index = lesson.words.findIndex(
         (_, i) => `phrase-${lesson.id}-${i}` === bare,
       );
@@ -360,8 +465,11 @@ export async function home(db: D1Database, user: string) {
     priorities: s.priorities,
     lesson: { ...currentLesson(s), exercises: undefined },
     session: safeSession(s.session),
+    listeningAvailable: currentLesson(s).exercises.some(
+      (e) => e.skill === "listening",
+    ),
     due: Object.values(s.cards).filter((c) => c.due <= Date.now()).length,
-    bank: lessons.map(({ id, title, germanTitle, outcome }) => ({
+    bank: catalogue(s).map(({ id, title, germanTitle, outcome }) => ({
       id,
       title,
       germanTitle,
@@ -387,7 +495,7 @@ export async function start(db: D1Database, user: string, raw: unknown) {
     if (s.session && !s.session.complete && !p.restart)
       return { result: { session: safeSession(s.session) } };
     const lesson = p.lessonId
-      ? lessons.find((l) => l.id === p.lessonId)
+      ? catalogue(s).find((l) => l.id === p.lessonId)
       : currentLesson(s);
     if (!lesson) throw new LearningError("Unknown lesson.");
     const blocks = p.blocks ?? s.settings.order;
@@ -533,6 +641,16 @@ export async function attempt(db: D1Database, user: string, raw: unknown) {
       independent: unaided && audioOK && result === "correct",
       recorded: true,
     };
+    if (
+      task.cardId &&
+      task.scheduled &&
+      !s.cards[task.cardId] &&
+      (s.introduced[studyDate()]?.length ?? 0) >= s.settings.newLimit
+    ) {
+      task.scheduled = false;
+      feedback.explanation +=
+        " Today’s new-item limit is reached; this is extra practice.";
+    }
     if (task.cardId && task.scheduled && !task.repair) {
       const old = s.cards[task.cardId];
       const oldVersion = Number(
@@ -695,7 +813,17 @@ export async function publish(db: D1Database, user: string, raw: unknown) {
       throw new LearningError("Read the latest brief before publishing.", 409);
     if (p.date !== studyDate())
       throw new LearningError("Publish for the current Vienna study date.");
-    const lesson = lessons.find((l) => l.id === p.lessonId)!;
+    if (!!p.lessonId === !!p.lesson)
+      throw new LearningError("Provide one lesson ID or one full lesson.");
+    const lesson = p.lesson ?? catalogue(s).find((l) => l.id === p.lessonId);
+    if (!lesson) throw new LearningError("Unknown lesson.");
+    if (p.lesson) {
+      validateLesson(p.lesson, s);
+      s.content = {
+        ...s.content,
+        [lesson.id]: structuredClone(lesson),
+      };
+    }
     s.lesson = structuredClone(lesson);
     s.lessonDate = p.date;
     return {
@@ -873,7 +1001,7 @@ export async function exportRecord(db: D1Database, user: string) {
       .all(),
   };
 }
-export async function prepare(db: D1Database) {
+async function preparationOwner(db: D1Database) {
   const binding = await db
     .prepare(
       "SELECT user_id FROM preparation_binding WHERE slot='owner' AND enabled=1",
@@ -888,6 +1016,27 @@ export async function prepare(db: D1Database) {
     s = await state(db, user);
   if (!s.settings.preparation)
     throw new LearningError("Preparation is disabled.", 403);
+  return user;
+}
+export async function preparationBrief(db: D1Database) {
+  const user = await preparationOwner(db),
+    s = await state(db, user);
+  return {
+    ...(await brief(db, user)),
+    publicationDate: s.lessonDate ?? null,
+    publicationTemplate: {
+      requestId: `daily-${studyDate()}`,
+      date: studyDate(),
+      baseVersion: s.version,
+      lesson: currentLesson(s),
+    },
+    publicationGuidance:
+      "Adapt the template into an original short lesson. Use a new lesson ID and matching exercise ID prefixes. Check every answer key and grammar explanation. Keep writing open/pending. Listening requires an existing verified recording and its exact transcript. If unsure, POST an empty object for the validated fallback bank.",
+  };
+}
+export async function prepare(db: D1Database, publication?: unknown) {
+  const user = await preparationOwner(db),
+    s = await state(db, user);
   const today = studyDate();
   if (s.lessonDate === today)
     return {
@@ -896,6 +1045,23 @@ export async function prepare(db: D1Database) {
       date: today,
       lessonId: s.lesson?.id,
     };
+  if (publication) {
+    const p = publishSchema.parse(publication);
+    await publish(db, user, p);
+    const after = await state(db, user);
+    if (
+      after.lessonDate !== p.date ||
+      after.lesson?.id !== (p.lesson?.id ?? p.lessonId)
+    )
+      throw new LearningError("Publication readback failed.", 503);
+    return {
+      published: true,
+      verified: true,
+      date: p.date,
+      lessonId: after.lesson?.id,
+      version: after.version,
+    };
+  }
   const report = await progress(db, user);
   const weak = report.targets
     .filter((t) => t.status === "Needs review")

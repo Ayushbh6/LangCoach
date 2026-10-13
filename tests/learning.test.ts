@@ -129,7 +129,7 @@ test("incorrect answers return after intervening tasks; max three failures; orig
   );
   assert.equal(evidence[0].answer, "der");
   assert.ok(
-    evidence.filter((e) => e.target === "accusative-articles").length <= 4,
+    evidence.filter((e) => e.target === "accusative-articles").length <= 3,
   );
   assert.ok(evidence.filter((e) => e.repair).every((e) => !e.independent));
 });
@@ -350,4 +350,52 @@ test("extra recall does not enroll or reschedule cards", async () => {
   let s = (await service.state(db, user)).session!;
   await answer(db, s.tasks[0].answer[0]);
   assert.equal(Object.keys((await service.state(db, user)).cards).length, 0);
+});
+
+test("validated lesson publication supports new curriculum without deployment", async () => {
+  const { db } = fixture();
+  const lesson = structuredClone(lessons[0]);
+  lesson.id = "new-shop";
+  lesson.title = "A new shop visit";
+  lesson.exercises.forEach(
+    (e) => (e.id = e.id.replace("groceries-", "new-shop-")),
+  );
+  await service.publish(db, user, {
+    requestId: requestId(),
+    date: studyDate(),
+    lesson,
+    baseVersion: 0,
+  });
+  assert.equal((await service.home(db, user)).lesson.id, "new-shop");
+  const s = await start(db, ["recall"], "new-shop");
+  assert.equal(s.tasks[0].answer[0], lesson.words[0].german);
+  const invalid = structuredClone(lesson);
+  invalid.version = 2;
+  invalid.exercises[0].answer = [];
+  await assert.rejects(
+    service.publish(db, user, {
+      requestId: requestId(),
+      date: studyDate(),
+      lesson: invalid,
+      baseVersion: (await service.state(db, user)).version,
+    }),
+    /answer keys/,
+  );
+  assert.equal((await service.home(db, user)).lesson.version, 1);
+});
+test("published prompts cannot change under existing recall IDs", async () => {
+  const { db } = fixture();
+  const lesson = structuredClone(lessons[0]);
+  lesson.version = 2;
+  lesson.words[0].german = "a changed prompt";
+  await assert.rejects(
+    service.publish(db, user, {
+      requestId: requestId(),
+      date: studyDate(),
+      lesson,
+      baseVersion: 0,
+    }),
+    /prompts stable/,
+  );
+  assert.equal((await service.state(db, user)).version, 0);
 });

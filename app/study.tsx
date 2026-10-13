@@ -35,6 +35,7 @@ type Home = {
   lesson: Session["lesson"];
   session: Session | null;
   due: number;
+  listeningAvailable: boolean;
   bank: { id: string; title: string; germanTitle: string; outcome: string }[];
 };
 type Progress = {
@@ -243,7 +244,9 @@ export default function Study({ userKey }: { userKey: string }) {
       if (continuing) setNotice("Right where you left off.");
       if (res.session.complete) {
         setFocused(false);
-        await loadBrief();
+        setNotice(
+          "Nothing due in this block right now. Try a scenario, or come back later.",
+        );
       }
     });
   }
@@ -408,11 +411,12 @@ export default function Study({ userKey }: { userKey: string }) {
               ))}
             </nav>
             <button
-              className="icon-button"
+              className="text-button settings-button"
               aria-label="Settings"
               onClick={() => setSettings(true)}
             >
               <Settings2 size={20} />
+              <span>Settings</span>
             </button>
           </>
         ) : (
@@ -813,7 +817,10 @@ export default function Study({ userKey }: { userKey: string }) {
                           b === "conversation" ? run(loadBrief) : begin([b])
                         }
                         disabled={
-                          busy || (b === "listening" && pref.audio === "silent")
+                          busy ||
+                          (b === "listening" &&
+                            (pref.audio === "silent" ||
+                              !home.listeningAvailable))
                         }
                       >
                         <span className="row-number">

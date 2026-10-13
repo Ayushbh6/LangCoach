@@ -94,7 +94,7 @@ export async function POST(request: Request) {
     "publish_lesson",
     {
       description:
-        "Publish a validated lesson-bank entry for today using the latest brief version. Preserves active sessions.",
+        "Publish a validated original lesson or select a lesson-bank entry for today, using the latest brief version. Preserve stable prompts and active sessions.",
       inputSchema: learning.publishSchema.shape,
       annotations: {
         readOnlyHint: false,

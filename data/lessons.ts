@@ -689,10 +689,23 @@ export const lessons: Lesson[] = seeds.map((s) => {
     }),
     exercises: [
       ex("gap", "grammar", s.gap[0], s.gap[1], s.gap[2]),
-      ex("variation", "grammar", s.variation[0], s.variation[1], s.gap[2], {
-        fresh: true,
-        transfer: true,
-      }),
+      ex(
+        "variation",
+        "grammar",
+        s.variation[0],
+        s.variation[1],
+        s.id === "repair-week" ? "weil-verb-final" : s.gap[2],
+        {
+          fresh: true,
+          transfer: true,
+          explanation:
+            s.id === "appointment"
+              ? "Use am with a day: am Freitag."
+              : s.id === "repair-week"
+                ? "After weil, the conjugated verb bin goes at the end."
+                : "Use the same pattern in the new situation. " + s.gap[3],
+        },
+      ),
       ex("read", "reading", s.reading[1], s.reading[2], `reading-${s.id}`, {
         context: s.reading[0],
         explanation:

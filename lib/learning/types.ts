@@ -98,6 +98,7 @@ export type State = {
   pausedSessions?: Session[];
   priorities: string[];
   lesson?: Lesson;
+  content?: Record<string, Lesson>;
   lessonDate?: string;
   migrated: boolean;
   version: number;
