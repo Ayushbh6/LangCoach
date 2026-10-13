@@ -1047,3 +1047,40 @@ pre {
   font-size: 13px;
   color: var(--muted);
 }
+
+/* Consistency is shown separately from independent learning evidence. */
+.activity-tracker { margin: 48px 0 64px; padding: 36px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.activity-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin: 32px 0; }
+.activity-stats dt { color: var(--muted); font-size: 14px; }
+.activity-stats dd { margin: 4px 0 0; font-size: 36px; letter-spacing: -1px; font-weight: 600; }
+.activity-stats dd span { font-size: 14px; font-weight: 400; letter-spacing: 0; }
+.activity-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: start; }
+.practice-calendar { max-width: 520px; width: 100%; }
+.calendar-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.calendar-heading h3 { margin: 0; }
+.calendar-heading > div { display: flex; gap: 8px; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.calendar-weekday { text-align: center; color: var(--muted); font-size: 12px; padding: 8px 0; }
+.calendar-day { position: relative; min-height: 44px; aspect-ratio: 1.15; border-radius: 10px; border: 1px solid transparent; }
+.calendar-day.practised { background: var(--soft); color: var(--green); font-weight: 650; }
+.calendar-day[aria-current="date"] { border-color: var(--green); }
+.calendar-day.selected { background: var(--green); color: white; }
+.practice-dot { display: inline-block; height: 4px; width: 4px; border-radius: 50%; background: currentColor; }
+.calendar-day .practice-dot { position: absolute; bottom: 6px; left: calc(50% - 2px); }
+.calendar-legend { display: flex; align-items: center; gap: 8px; }
+.activity-detail { min-height: 320px; padding: 24px 28px; background: var(--soft); border-radius: var(--radius); overflow-wrap: anywhere; }
+.activity-detail h3 { font-size: 24px; margin: 0 0 18px; }
+.activity-detail h4 { margin: 20px 0 6px; font-size: 14px; }
+.activity-detail ul { margin: 0; padding-left: 20px; }
+.activity-detail .eyebrow { margin-top: 0; }
+.activity-skills { text-transform: capitalize; margin-top: 0; }
+.activity-explainer { margin-top: 28px; color: var(--muted); font-size: 14px; max-width: 760px; }
+.activity-explainer summary { cursor: pointer; color: var(--ink); }
+@media (max-width: 700px) {
+  .activity-stats { grid-template-columns: repeat(2, 1fr); gap: 20px; }
+  .activity-layout { grid-template-columns: 1fr; gap: 28px; }
+  .activity-detail { min-height: 0; padding: 24px; }
+  .calendar-grid { gap: 3px; }
+  .calendar-day { min-height: 44px; }
+  .activity-tracker { margin-top: 32px; }
+}

@@ -399,3 +399,18 @@ test("published prompts cannot change under existing recall IDs", async () => {
   );
   assert.equal((await service.state(db, user)).version, 0);
 });
+
+test("activity includes real attempts and legacy reviews, remains account isolated", async () => {
+  const { db, sqlite } = fixture();
+  await start(db);
+  assert.equal((await service.progress(db, user)).activity.activeDays, 0);
+  await answer(db, "wrong");
+  sqlite.prepare("INSERT INTO reviews VALUES(?,?,?,?,?)").run("old-review", user, "legacy:en", "good", Date.now() - 5 * 86400000);
+  const activity = (await service.progress(db, user)).activity;
+  assert.equal(activity.activeDays, 2);
+  assert.equal(activity.days.at(-1)!.attempts, 1);
+  assert.equal(activity.days.at(-1)!.scenarios[0], lessons[0].germanTitle);
+  const other = (await service.progress(db, "other-user")).activity;
+  assert.equal(other.activeDays, 0);
+  assert.deepEqual(other.days, []);
+});

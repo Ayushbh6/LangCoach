@@ -19,6 +19,8 @@ import {
   Flag,
   WifiOff,
 } from "lucide-react";
+import { ActivityTracker } from "./activity-tracker";
+import type { Activity } from "../lib/learning/activity";
 import { curriculum } from "../data/curriculum";
 import type {
   Session,
@@ -39,6 +41,7 @@ type Home = {
   bank: { id: string; title: string; germanTitle: string; outcome: string }[];
 };
 type Progress = {
+  activity: Activity;
   skills: {
     skill: string;
     attempts: number;
@@ -332,6 +335,23 @@ export default function Study({ userKey }: { userKey: string }) {
       "Learning Brief copied. Paste it into your German ChatGPT project.",
     );
   }
+  useEffect(() => {
+    if (view !== "progress") return;
+    let active = true;
+    const update = () => {
+      if (document.visibilityState !== "visible") return;
+      api<Progress>("progress").then(data => {
+        if (active) setReport(data);
+      }).catch(() => { /* Keep the last confirmed record while offline. */ });
+    };
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [view]);
   async function changeView(v: typeof view) {
     setView(v);
     setError("");
@@ -957,6 +977,8 @@ export default function Study({ userKey }: { userKey: string }) {
                 </p>
                 {report ? (
                   <>
+                    <ActivityTracker activity={report.activity} />
+                    <h2>Your learning evidence</h2>
                     <div className="evidence-table">
                       {report.skills.map((s) => (
                         <div key={s.skill} className="evidence-row">

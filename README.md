@@ -55,3 +55,7 @@ Sites applies hosted migrations during publication. Never publish with Wrangler.
 ## Connection and daily preparation
 
 See [ChatGPT connection](docs/CHATGPT_CONNECTION.md) and [daily preparation](docs/DAILY_PREPARATION.md). Hosted publication is separate from plugin installation, actual tool verification and phone voice testing. Do not claim these steps are complete without observing them.
+
+### Practice calendar and consistency
+
+Progress includes current/best streaks, all-time active days and Monday–Sunday activity, plus a selectable monthly practice calendar in Europe/Vienna time. Submitted attempts (including mistakes, hints and repairs), original flashcard reviews and saved conversation observations count. Opening sessions, profile reports and automatic lesson preparation do not. Conversation practice uses its occurrence date, not import date; retries cannot add duplicate activity. Today remains available to extend a streak from yesterday. These activity measures are separate from independent learning evidence; no practice durations or historical skills are inferred.

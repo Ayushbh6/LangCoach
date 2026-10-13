@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildActivity } from "./activity";
 import { checks } from "../../data/checks";
 import { lessons } from "../../data/lessons";
 import { allVocabulary } from "../../data/vocabulary";
@@ -874,6 +875,7 @@ export async function progress(db: D1Database, user: string) {
   ];
   return {
     version: s.version,
+    activity: buildActivity(all, (await db.prepare("SELECT request_id, reviewed_at FROM reviews WHERE user_id=? ORDER BY reviewed_at").bind(user).all<{ request_id: string; reviewed_at: number }>()).results),
     skills: skills.map((skill) => {
       const rows = evidence.filter(
         (e) => e.skill === skill && !flagged.has(e.id),
